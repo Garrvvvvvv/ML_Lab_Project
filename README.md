@@ -88,8 +88,6 @@ the data, stratified by label). Latest run:
 | F1 Score (Spoofed) | 0.7932 |
 | ROC AUC | 0.9541 (95.41%) |
 | Log Loss | 1.7561 |
-| Cohen's Kappa | 0.2500 |
-| Matthews Corr. | 0.3731 |
 
 Confusion matrix:
 
