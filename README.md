@@ -141,3 +141,27 @@ pip install scapy pandas scikit-learn joblib
 python model_scripts/train.py      # extracts dataset, saves it to dataset/, trains both models, prints metrics
 python model_scripts/predict.py    # runs ensemble inference on a sample pcap, writes prediction_output.csv
 ```
+
+## Future Roadmap: Deep Learning & Architectural Extensions
+
+Drawing directly from our base paper (*"Intelligent ARP Spoofing Detection using Multi-layered Machine Learning Techniques for IoT Networks"*, Ali et al., 2025), the future evolution of this project focuses on deploying **Deep Learning (DL)** at the central aggregation tier to complement our lightweight edge models:
+
+### 1. Sequence & Temporal Deep Learning (LSTM / Bi-LSTM / 1D-CNN)
+- **Current Limitation**: Classical ML inspects packets individually in isolation (stateless evaluation).
+- **Deep Learning Extension**: Network traffic is fundamentally a continuous time-series. We plan to process packet streams using sliding windows of length $W$ (e.g., $W = 50$ consecutive packets) fed into **Long Short-Term Memory (LSTM)** or **1D-CNN** networks.
+- **Benefit**: The LSTM hidden state learns chronological dialogue patterns (`Request` $\to$ `Expected Latency` $\to$ `Single Matching Reply`). It instantly identifies temporal sequence violations (e.g., repeated unsolicited reply bursts without prior requests) that per-packet classifiers miss.
+
+### 2. Deep Autoencoders for Zero-Day Threat Isolation
+- **The Concept**: Inspired by deep hierarchical representation learning (*Shone et al.* cited in base paper), we plan to implement a **Deep Variational Autoencoder (VAE)**.
+- **Implementation**: The autoencoder is trained strictly on massive volumes of benign, normal network traffic to compress and reconstruct normal packet flows with near-zero error.
+- **Benefit**: When an unknown, zero-day spoofing variant or stealthy low-rate attack passes through the network, the model cannot reconstruct the unseen pattern, causing the **reconstruction loss to spike**. This enables autonomous anomaly detection without requiring prior attack labels or signatures.
+
+### 3. Graph Neural Networks (GNNs) on LAN Topologies
+- **The Concept**: An ARP network is inherently a dynamic bipartite graph $\mathcal{G} = (\mathcal{V}_{\text{IP}}, \mathcal{V}_{\text{MAC}}, \mathcal{E})$, where IP addresses and physical MAC addresses are nodes, and ARP packets form directed edges.
+- **Deep Learning Extension**: Using **Graph Convolutional Networks (GCN)** or **Graph Attention Networks (GAT)** to monitor graph topology in real time.
+- **Benefit**: In normal traffic, the graph maintains stable 1-to-1 IP-MAC edge bindings. During spoofing, an attacker's MAC node spawns rapid, high-degree anomalous edges across multiple IP nodes. The GNN detects this structural perturbation instantly, pinpointing the attacker's true physical MAC address even if it spoofs multiple IPs simultaneously.
+
+### 4. Hierarchical Edge-to-Cloud Pipeline (Integrating our `ANN_ENSEMBLE`)
+- **Multi-Tier Architecture**: The project already contains a 3-tier Multi-Layer Perceptron ensemble in the [`ANN_ENSEMBLE/`](../ANN_ENSEMBLE/) folder (ANN-1: 64-32, ANN-2: 128-64, ANN-3: 32-16 with Soft Voting).
+- **Future Integration**: Connect the lightweight Gaussian Naive Bayes model to run directly at the local router edge (<5ms latency), while escalating uncertain or borderline packets (confidence $< 0.6$) to the central Deep Neural Network aggregator for deep non-linear inspection and automated mitigation.
+
