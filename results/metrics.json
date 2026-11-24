@@ -1,0 +1,519 @@
+{
+  "holdout": {
+    "Naive Bayes": {
+      "accuracy": 0.9683219178082192,
+      "precision": 0.9979959919839679,
+      "recall": 0.87215411558669,
+      "f1": 0.930841121495327,
+      "false_positive_rate": 0.0005665722379603399,
+      "kappa": 0.9104174720754205,
+      "mcc": 0.9138955712624759,
+      "confusion_matrix": [
+        [
+          1764,
+          1
+        ],
+        [
+          73,
+          498
+        ]
+      ],
+      "roc_auc": 0.9813765423217555,
+      "log_loss": 0.6533019288681361
+    },
+    "Isolation Forest": {
+      "accuracy": 0.8595890410958904,
+      "precision": 0.8292682926829268,
+      "recall": 0.5359019264448336,
+      "f1": 0.6510638297872341,
+      "false_positive_rate": 0.035694050991501414,
+      "kappa": 0.5681977771040136,
+      "mcc": 0.5894209540857226,
+      "confusion_matrix": [
+        [
+          1702,
+          63
+        ],
+        [
+          265,
+          306
+        ]
+      ],
+      "roc_auc": 0.9056850711688156
+    },
+    "Ensemble (NB OR IF)": {
+      "accuracy": 0.9413527397260274,
+      "precision": 0.8861209964412812,
+      "recall": 0.87215411558669,
+      "f1": 0.8790820829655781,
+      "false_positive_rate": 0.036260623229461754,
+      "kappa": 0.8403738071629082,
+      "mcc": 0.8404200165839738,
+      "confusion_matrix": [
+        [
+          1701,
+          64
+        ],
+        [
+          73,
+          498
+        ]
+      ]
+    }
+  },
+  "same_network_holdout": {
+    "192.168": {
+      "captures": [
+        "arp_gratuitous_announcement.pcapng",
+        "arp_normal_traffic.pcapng",
+        "arp_reply_race_condition.pcapng",
+        "arp_request_flooding.pcapng",
+        "arp_spoof_basic.pcapng",
+        "arp_spoofing_unicast_reply.pcapng"
+      ],
+      "test_normal": 56,
+      "test_attack": 571,
+      "results": {
+        "Naive Bayes": {
+          "accuracy": 0.8309409888357256,
+          "precision": 0.9978586723768736,
+          "recall": 0.8161120840630472,
+          "f1": 0.8978805394990366,
+          "false_positive_rate": 0.017857142857142856,
+          "kappa": 0.43442371842875616,
+          "mcc": 0.5221980569512188,
+          "confusion_matrix": [
+            [
+              55,
+              1
+            ],
+            [
+              105,
+              466
+            ]
+          ],
+          "roc_auc": 0.9105110082561921,
+          "log_loss": 2.3533778518657473
+        },
+        "Isolation Forest": {
+          "accuracy": 0.5677830940988836,
+          "precision": 1.0,
+          "recall": 0.5253940455341506,
+          "f1": 0.6888633754305397,
+          "false_positive_rate": 0.0,
+          "kappa": 0.16509677324253025,
+          "mcc": 0.29995956174915894,
+          "confusion_matrix": [
+            [
+              56,
+              0
+            ],
+            [
+              271,
+              300
+            ]
+          ],
+          "roc_auc": 0.897344883662747
+        },
+        "Ensemble (NB OR IF)": {
+          "accuracy": 0.8309409888357256,
+          "precision": 0.9978586723768736,
+          "recall": 0.8161120840630472,
+          "f1": 0.8978805394990366,
+          "false_positive_rate": 0.017857142857142856,
+          "kappa": 0.43442371842875616,
+          "mcc": 0.5221980569512188,
+          "confusion_matrix": [
+            [
+              55,
+              1
+            ],
+            [
+              105,
+              466
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "leave_one_capture_out": [
+    {
+      "capture": "arp_gratuitous_announcement.pcapng",
+      "label": 1,
+      "packets": 182,
+      "nb_flagged": 0.4340659340659341,
+      "if_flagged": 0.0,
+      "ens_flagged": 0.4340659340659341,
+      "ens_flagged_aug": 0.4340659340659341
+    },
+    {
+      "capture": "arp_normal_campus_wifi_02.pcapng",
+      "label": 0,
+      "packets": 1530,
+      "nb_flagged": 0.0,
+      "if_flagged": 0.00065359477124183,
+      "ens_flagged": 0.00065359477124183,
+      "ens_flagged_aug": 0.00065359477124183
+    },
+    {
+      "capture": "arp_normal_campus_wifi_03.pcapng",
+      "label": 0,
+      "packets": 3017,
+      "nb_flagged": 0.006629101756711966,
+      "if_flagged": 0.015246934040437522,
+      "ens_flagged": 0.016572754391779913,
+      "ens_flagged_aug": 0.13125621478289692
+    },
+    {
+      "capture": "arp_normal_traffic.pcapng",
+      "label": 0,
+      "packets": 187,
+      "nb_flagged": 0.026737967914438502,
+      "if_flagged": 0.0,
+      "ens_flagged": 0.026737967914438502,
+      "ens_flagged_aug": 0.026737967914438502
+    },
+    {
+      "capture": "arp_reply_race_condition.pcapng",
+      "label": 1,
+      "packets": 9,
+      "nb_flagged": 0.5555555555555556,
+      "if_flagged": 0.0,
+      "ens_flagged": 0.5555555555555556,
+      "ens_flagged_aug": 0.5555555555555556
+    },
+    {
+      "capture": "arp_request_flooding.pcapng",
+      "label": 1,
+      "packets": 1348,
+      "nb_flagged": 0.935459940652819,
+      "if_flagged": 0.8056379821958457,
+      "ens_flagged": 0.935459940652819,
+      "ens_flagged_aug": 0.935459940652819
+    },
+    {
+      "capture": "arp_spoof_basic.pcapng",
+      "label": 1,
+      "packets": 213,
+      "nb_flagged": 0.4835680751173709,
+      "if_flagged": 0.0,
+      "ens_flagged": 0.4835680751173709,
+      "ens_flagged_aug": 0.4835680751173709
+    },
+    {
+      "capture": "arp_spoofing_unicast_reply.pcapng",
+      "label": 1,
+      "packets": 151,
+      "nb_flagged": 0.9139072847682119,
+      "if_flagged": 0.0,
+      "ens_flagged": 0.9139072847682119,
+      "ens_flagged_aug": 0.9139072847682119
+    },
+    {
+      "capture": "new_File_for normal_traffic.pcapng",
+      "label": 0,
+      "packets": 1149,
+      "nb_flagged": 0.0017406440382941688,
+      "if_flagged": 0.0017406440382941688,
+      "ens_flagged": 0.0034812880765883376,
+      "ens_flagged_aug": 0.009573542210617928
+    }
+  ],
+  "ablation": {
+    "real_only": {
+      "holdout": {
+        "Naive Bayes": {
+          "accuracy": 0.9683219178082192,
+          "precision": 0.9979959919839679,
+          "recall": 0.87215411558669,
+          "f1": 0.930841121495327,
+          "false_positive_rate": 0.0005665722379603399,
+          "kappa": 0.9104174720754205,
+          "mcc": 0.9138955712624759,
+          "confusion_matrix": [
+            [
+              1764,
+              1
+            ],
+            [
+              73,
+              498
+            ]
+          ],
+          "roc_auc": 0.9813765423217555,
+          "log_loss": 0.6533019288681361
+        },
+        "Isolation Forest": {
+          "accuracy": 0.8595890410958904,
+          "precision": 0.8292682926829268,
+          "recall": 0.5359019264448336,
+          "f1": 0.6510638297872341,
+          "false_positive_rate": 0.035694050991501414,
+          "kappa": 0.5681977771040136,
+          "mcc": 0.5894209540857226,
+          "confusion_matrix": [
+            [
+              1702,
+              63
+            ],
+            [
+              265,
+              306
+            ]
+          ],
+          "roc_auc": 0.9056850711688156
+        },
+        "Ensemble (NB OR IF)": {
+          "accuracy": 0.9413527397260274,
+          "precision": 0.8861209964412812,
+          "recall": 0.87215411558669,
+          "f1": 0.8790820829655781,
+          "false_positive_rate": 0.036260623229461754,
+          "kappa": 0.8403738071629082,
+          "mcc": 0.8404200165839738,
+          "confusion_matrix": [
+            [
+              1701,
+              64
+            ],
+            [
+              73,
+              498
+            ]
+          ]
+        }
+      },
+      "same_network_holdout": {
+        "192.168": {
+          "captures": [
+            "arp_gratuitous_announcement.pcapng",
+            "arp_normal_traffic.pcapng",
+            "arp_reply_race_condition.pcapng",
+            "arp_request_flooding.pcapng",
+            "arp_spoof_basic.pcapng",
+            "arp_spoofing_unicast_reply.pcapng"
+          ],
+          "test_normal": 56,
+          "test_attack": 571,
+          "results": {
+            "Naive Bayes": {
+              "accuracy": 0.8309409888357256,
+              "precision": 0.9978586723768736,
+              "recall": 0.8161120840630472,
+              "f1": 0.8978805394990366,
+              "false_positive_rate": 0.017857142857142856,
+              "kappa": 0.43442371842875616,
+              "mcc": 0.5221980569512188,
+              "confusion_matrix": [
+                [
+                  55,
+                  1
+                ],
+                [
+                  105,
+                  466
+                ]
+              ],
+              "roc_auc": 0.9105110082561921,
+              "log_loss": 2.3533778518657473
+            },
+            "Isolation Forest": {
+              "accuracy": 0.5677830940988836,
+              "precision": 1.0,
+              "recall": 0.5253940455341506,
+              "f1": 0.6888633754305397,
+              "false_positive_rate": 0.0,
+              "kappa": 0.16509677324253025,
+              "mcc": 0.29995956174915894,
+              "confusion_matrix": [
+                [
+                  56,
+                  0
+                ],
+                [
+                  271,
+                  300
+                ]
+              ],
+              "roc_auc": 0.897344883662747
+            },
+            "Ensemble (NB OR IF)": {
+              "accuracy": 0.8309409888357256,
+              "precision": 0.9978586723768736,
+              "recall": 0.8161120840630472,
+              "f1": 0.8978805394990366,
+              "false_positive_rate": 0.017857142857142856,
+              "kappa": 0.43442371842875616,
+              "mcc": 0.5221980569512188,
+              "confusion_matrix": [
+                [
+                  55,
+                  1
+                ],
+                [
+                  105,
+                  466
+                ]
+              ]
+            }
+          }
+        }
+      }
+    },
+    "augmented": {
+      "holdout": {
+        "Naive Bayes": {
+          "accuracy": 0.9683219178082192,
+          "precision": 0.9979959919839679,
+          "recall": 0.87215411558669,
+          "f1": 0.930841121495327,
+          "false_positive_rate": 0.0005665722379603399,
+          "kappa": 0.9104174720754205,
+          "mcc": 0.9138955712624759,
+          "confusion_matrix": [
+            [
+              1764,
+              1
+            ],
+            [
+              73,
+              498
+            ]
+          ],
+          "roc_auc": 0.9879630686187445,
+          "log_loss": 0.5054785173614712
+        },
+        "Isolation Forest": {
+          "accuracy": 0.8595890410958904,
+          "precision": 0.8292682926829268,
+          "recall": 0.5359019264448336,
+          "f1": 0.6510638297872341,
+          "false_positive_rate": 0.035694050991501414,
+          "kappa": 0.5681977771040136,
+          "mcc": 0.5894209540857226,
+          "confusion_matrix": [
+            [
+              1702,
+              63
+            ],
+            [
+              265,
+              306
+            ]
+          ],
+          "roc_auc": 0.9056850711688156
+        },
+        "Ensemble (NB OR IF)": {
+          "accuracy": 0.9413527397260274,
+          "precision": 0.8861209964412812,
+          "recall": 0.87215411558669,
+          "f1": 0.8790820829655781,
+          "false_positive_rate": 0.036260623229461754,
+          "kappa": 0.8403738071629082,
+          "mcc": 0.8404200165839738,
+          "confusion_matrix": [
+            [
+              1701,
+              64
+            ],
+            [
+              73,
+              498
+            ]
+          ]
+        }
+      },
+      "same_network_holdout": {
+        "192.168": {
+          "captures": [
+            "arp_gratuitous_announcement.pcapng",
+            "arp_normal_traffic.pcapng",
+            "arp_reply_race_condition.pcapng",
+            "arp_request_flooding.pcapng",
+            "arp_spoof_basic.pcapng",
+            "arp_spoofing_unicast_reply.pcapng"
+          ],
+          "test_normal": 56,
+          "test_attack": 571,
+          "results": {
+            "Naive Bayes": {
+              "accuracy": 0.8086124401913876,
+              "precision": 0.9977924944812362,
+              "recall": 0.7915936952714536,
+              "f1": 0.8828125,
+              "false_positive_rate": 0.017857142857142856,
+              "kappa": 0.3967383460816858,
+              "mcc": 0.4928122066691592,
+              "confusion_matrix": [
+                [
+                  55,
+                  1
+                ],
+                [
+                  119,
+                  452
+                ]
+              ],
+              "roc_auc": 0.9089942456842632,
+              "log_loss": 2.8926473729635718
+            },
+            "Isolation Forest": {
+              "accuracy": 0.5677830940988836,
+              "precision": 1.0,
+              "recall": 0.5253940455341506,
+              "f1": 0.6888633754305397,
+              "false_positive_rate": 0.0,
+              "kappa": 0.16509677324253025,
+              "mcc": 0.29995956174915894,
+              "confusion_matrix": [
+                [
+                  56,
+                  0
+                ],
+                [
+                  271,
+                  300
+                ]
+              ],
+              "roc_auc": 0.897344883662747
+            },
+            "Ensemble (NB OR IF)": {
+              "accuracy": 0.8086124401913876,
+              "precision": 0.9977924944812362,
+              "recall": 0.7915936952714536,
+              "f1": 0.8828125,
+              "false_positive_rate": 0.017857142857142856,
+              "kappa": 0.3967383460816858,
+              "mcc": 0.4928122066691592,
+              "confusion_matrix": [
+                [
+                  55,
+                  1
+                ],
+                [
+                  119,
+                  452
+                ]
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "unseen_holdout": [
+    {
+      "capture": "arp_normal_holdout_2.pcapng",
+      "label": 0,
+      "packets": 1457,
+      "nb_aug": 0.028826355525051476,
+      "if_aug": 0.0013726835964310226,
+      "ens_aug": 0.028826355525051476,
+      "nb_real": 0.02608098833218943,
+      "if_real": 0.0013726835964310226,
+      "ens_real": 0.026767330130404943
+    }
+  ],
+  "synthetic_rows": 3980
+}

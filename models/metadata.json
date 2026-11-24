@@ -1,0 +1,59 @@
+{
+  "features": [
+    "op",
+    "is_broadcast",
+    "is_gratuitous",
+    "mac_conflict",
+    "ip_mac_count",
+    "l2_ip_count",
+    "l2_reply_rate_1s",
+    "arp_reply_count",
+    "log_interarrival_ms",
+    "log_reply_delay_ms"
+  ],
+  "sklearn_version": "1.6.1",
+  "if_contamination": 0.005,
+  "config": {
+    "seed": 42,
+    "train_fraction": 0.7,
+    "if_contamination": 0.005,
+    "nb_var_smoothing": 1e-09,
+    "rf_n_estimators": 200,
+    "rf_min_samples_leaf": 5,
+    "lr_C": 10.0,
+    "tuning": {
+      "method": "leave-one-capture-out CV on the training pool; score = mean attack recall - mean normal false-alarm rate",
+      "tolerance": 0.005,
+      "tuned_at": "2026-11-25T02:50:39",
+      "ensemble_cv_score": 0.6526,
+      "rf_cv_score": 0.8025,
+      "lr_cv_score": 0.5272
+    }
+  },
+  "train_captures": [
+    "arp_gratuitous_announcement.pcapng",
+    "arp_normal_campus_wifi_02.pcapng",
+    "arp_normal_campus_wifi_03.pcapng",
+    "arp_normal_traffic.pcapng",
+    "arp_reply_race_condition.pcapng",
+    "arp_request_flooding.pcapng",
+    "arp_spoof_basic.pcapng",
+    "arp_spoofing_unicast_reply.pcapng",
+    "new_File_for normal_traffic.pcapng"
+  ],
+  "synthetic_augmentation": false,
+  "synthetic_rows_in_dataset_files": 3980,
+  "trained_at": "2026-11-25T02:51:12",
+  "run_id": "20261125-025112",
+  "git_commit": "9ec040f9093eec6a1728ef72705d4dbd97cddd6f",
+  "data_hash": "3e5ed8d1817a0575e85e94eb586c359ae35b7e8c080dead4ebf6f416abae86f9",
+  "headline_metrics": {
+    "all_data_holdout": {
+      "nb_recall": 0.87215411558669,
+      "nb_fpr": 0.0005665722379603399,
+      "ensemble_recall": 0.87215411558669,
+      "ensemble_fpr": 0.036260623229461754
+    },
+    "unseen_capture_ensemble_fpr": 0.026767330130404943
+  }
+}

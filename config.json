@@ -1,0 +1,17 @@
+{
+  "seed": 42,
+  "train_fraction": 0.7,
+  "if_contamination": 0.005,
+  "nb_var_smoothing": 1e-09,
+  "rf_n_estimators": 200,
+  "rf_min_samples_leaf": 5,
+  "lr_C": 10.0,
+  "tuning": {
+    "method": "leave-one-capture-out CV on the training pool; score = mean attack recall - mean normal false-alarm rate",
+    "tolerance": 0.005,
+    "tuned_at": "2026-11-25T02:50:39",
+    "ensemble_cv_score": 0.6526,
+    "rf_cv_score": 0.8025,
+    "lr_cv_score": 0.5272
+  }
+}

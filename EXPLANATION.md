@@ -1,449 +1,462 @@
 # ARP Spoofing Detection — Master Explanation (ML Lab)
 
-This is the full walkthrough of the classical-ML pipeline in this folder:
-the problem, the raw data, how the dataset and labels are built, which
-models were chosen and why, what every file in `models/` actually is, how
-evaluation was done, and a prep-list of questions a teacher is likely to
-ask with ready answers.
+Walkthrough of the project in this folder: the research context (the base paper and the gap we address), the problem, the
+data, how the dataset/labels/features are built, the models, how they are evaluated, tuning/tracking/tests, the simulator,
+what every file is, the known limitations, and a prep list of likely teacher questions. The shipped detectors are Gaussian
+Naive Bayes and an Isolation Forest (scikit-learn); Logistic Regression and Random Forest are trained for comparison. No deep
+learning is used.
 
-No deep learning is used anywhere in this folder — only Gaussian Naive
-Bayes and Isolation Forest, both classical scikit-learn models.
+Exact numbers live in [`results/metrics.md`](results/metrics.md) and [`results/model_comparison.md`](results/model_comparison.md)
+(auto-generated); this document quotes the latest run.
+
+Authors: Garv Noor (1024170189), Manya Gupta (1024170192).
+
+---
+
+## 0. Research context: the base paper and the gap
+
+**Base paper** (PDF in `Base Paper/`): Singhal and Kumar, *"A cost-sensitive random forest framework for ARP spoofing
+detection in Internet of Medical Things networks"*, Frontiers in Big Data 9 (2026), DOI 10.3389/fdata.2026.1878242. A
+peer-reviewed, open-access journal article, published 22 July 2026.
+
+**What the paper does** (checked against the PDF):
+- A cost-sensitive Random Forest (SH-IORF) for ARP spoofing in medical IoT.
+- Public dataset CICIoMT2024: 347,721 network *flows*, 47 flow features, from a testbed of "real and simulated devices".
+  The task is binary (ARP spoofing vs benign).
+- 18 added timing features (65 total), pruned by correlation to 52.
+- One stratified 70/15/15 train/validation/test split. Class weights and the decision threshold (0.35, chosen under a
+  false-negative-rate constraint of at most 0.5%) are tuned on the validation part only.
+- Results: 99.90% accuracy, 0.17% missed attacks (40 of 23,390), 12 false alarms among 28,768 benign flows.
+- One extra check on a second public dataset, CICIDS2017: 99.32% accuracy.
+- Its comparison table lists accuracy numbers reported by other papers on their own datasets.
+- Its authors state the framework was not validated on real devices and is offline.
+
+**The gap, and the reason we built this project.** The paper's headline score comes from splitting one public dataset into
+train and test. It added one check on a second public dataset, which is good. But both datasets are ready-made, and neither is
+traffic the authors recorded or an attack type held out of training. **Our research area is ARP-spoofing detection tested beyond
+a train/test split.**
+
+**Research questions.** RQ1: does detection work on ARP traffic we recorded ourselves? RQ2: does it hold up on attack types and
+recordings held out of training? RQ3: can it be shown working on live traffic?
+
+**What we did instead** (details in the sections below):
+
+| | Base paper | This project |
+|---|---|---|
+| Data | public benchmark of flows | 9,243 real ARP packets we recorded (Wi-Fi traffic + lab attacks) |
+| Attacks | one class | 5 ARP attack types, each tested on its own |
+| Features | 47 flow + 18 timing features, pruned to 52 | 10 per-packet ARP features, no raw IP/MAC |
+| Testing | one 70/15/15 split + a second public dataset | chronological split, same-network, leave-one-capture-out, unseen capture; tuned by cross-validation |
+| Baselines | numbers copied from other papers | we trained NB, IF, LR and RF under the same protocol |
+| Demo | offline | live simulator on real traffic |
+
+**Answers (summary).** RQ1 yes: Naive Bayes reaches recall 0.87 at about 0.1% false alarms on the all-data hold-out and recall 0.82
+at 1.8% on the same-network test. RQ2 partly: flooding 0.94 and unicast spoof 0.91 are caught on captures held out of training,
+basic spoof 0.48 and gratuitous 0.43 are lower (partly label noise), and the unseen evening capture gives 2.7% false alarms.
+RQ3 yes as a demonstration (the injected attacks are simulated, so scores there are illustrations).
+
+**What not to claim.** The data and the task differ (flows vs. packets), so the numbers are **not directly comparable**: we claim
+*stronger testing*, not higher accuracy. Their dataset is much larger and their scores are higher, and their cost-sensitive
+threshold is something we did not do. Our "unseen" evening capture is the same campus Wi-Fi at a different time, not a different
+network, and our attacks are lab-staged (real packets, not attacks in the wild).
+
+Other papers read are indexed in `reference_papers/README.md`; the earlier base paper (Ali et al., 2025, an arXiv preprint) is
+kept there for reference.
 
 ---
 
 ## 1. The problem: what is ARP spoofing
 
-Every device on a LAN has two addresses: an **IP address** (logical) and a
-**MAC address** (physical, burned into the network card). To send data,
-device A needs to know B's MAC address for a given IP. **ARP (Address
-Resolution Protocol)** resolves this:
+Every LAN device has an **IP address** (logical) and a **MAC address** (physical). To send
+data to an IP, device A needs the matching MAC. **ARP** resolves it:
 
-- A broadcasts: *"Who has 192.168.1.5?"* → **ARP request, opcode 1**
-- B replies: *"192.168.1.5 is at MAC xx:xx:xx:xx:xx:xx"* → **ARP reply, opcode 2**
+- A broadcasts *"Who has 192.168.1.5?"* -> **request, opcode 1**
+- B answers *"192.168.1.5 is at xx:xx:..."* -> **reply, opcode 2**
 
-ARP has **no authentication**. Any device can send an unsolicited ARP
-reply claiming to own any IP address, and other devices will blindly
-update their ARP cache. **ARP spoofing** exploits exactly this: an attacker
-sends forged ARP replies to make victims believe the attacker's MAC is the
-router's (or another host's) MAC, redirecting traffic through the attacker
-(man-in-the-middle), or flooding the network with fake replies.
+ARP has **no authentication**: anyone can send an unsolicited reply claiming any IP, and
+others update their ARP cache. **ARP spoofing** abuses this to redirect traffic through the
+attacker (man-in-the-middle) or to flood the network. Variants in the data:
 
-Attack variants captured in this project's data:
 - **Basic spoof** — attacker claims another host's/router's IP
-- **ARP flooding** — attacker blasts huge volumes of fake replies with random IP/MAC pairs
-- **Gratuitous ARP** — attacker sends an unsolicited reply nobody requested, to pre-poison caches
-- **Race condition** — attacker tries to get its fake reply accepted before the real one
-- **Unicast spoofing** — same trick sent directly to one victim instead of broadcast, to be stealthier
+- **ARP flooding** — floods of forged replies with random IP/MAC pairs
+- **Gratuitous ARP** — unsolicited announcements that pre-poison caches
+- **Race condition** — forged reply raced against the real one
+- **Unicast spoofing** — the forged reply sent directly to one victim (stealthier)
 
 ## 2. The raw data: `.pcapng` files
 
-A `.pcapng` ("pcap Next Generation") file is a raw recording of network
-packets with timestamps — nothing more. It was captured with tools like
-Wireshark/tcpdump while deliberately running normal traffic or one of the
-attack scripts.
+A `.pcapng` is a timestamped recording of raw packets (Wireshark/tcpdump). Nine captures are in
+`pcap_files/`: four normal and five attack captures (plus one unseen normal capture in `holdout/`). New captures can simply be dropped in:
+the **file name decides the label** (`normal` in the name -> 0, otherwise 1). Captures in
+`pcap_files/holdout/` are not used by training and serve as unseen test data.
+**Network matters:** the five attack captures and `arp_normal_traffic` were recorded on one LAN (192.168.1.x, gateway
+192.168.1.1, about six devices, recorded in July 2025); the other three normal captures and the holdout capture come from
+campus Wi-Fi (172.16.x.x; recorded passively with `dumpcap -f arp`). Training tags each capture
+with its network and reports a same-network evaluation, because mixing networks lets a model learn the network
+instead of the attack. The lab network could not be revisited, so no more normal traffic could be recorded on it.
+How to record a new normal capture: [`docs/RECORDING_NORMAL_TRAFFIC.md`](docs/RECORDING_NORMAL_TRAFFIC.md).
 
-Six capture files live in [`pcap_files/`](pcap_files/):
+**Privacy.** Captures and the raw CSV contain real MAC/IP addresses of other people's devices; anonymise before publishing.
 
-| File | What was happening during capture |
-|---|---|
-| `arp_normal_traffic.pcapng` | Ordinary network activity, no attack |
-| `arp_spoof_basic.pcapng` | Basic ARP spoof running |
-| `arp_request_flooding.pcapng` | ARP flood running |
-| `arp_gratuitous_announcement.pcapng` | Gratuitous ARP announcements running |
-| `arp_reply_race_condition.pcapng` | Race-condition spoof running |
-| `arp_spoofing_unicast_reply.pcapng` | Unicast spoof running |
+## 3. Scapy's role (and only its role)
 
-## 3. Reading the packets: Scapy's role (and only its role)
+Scapy is only a **decoder** (`rdpcap`, `pkt[ARP].psrc`, `pkt[Ether].src`, ...). It has no concept
+of spoofing. All feature engineering and detection logic is plain Python/pandas in
+[`model_scripts/features.py`](model_scripts/features.py), which is imported by `train.py`, `predict.py` and the simulator so
+training and inference can never drift apart. `FeatureExtractor` keeps its state between calls: one big call on a whole capture
+and many small calls on a live stream give identical rows (tested), and checked identical on all 7,786 real packets.
 
-**Scapy** is a Python library for crafting, sending, and parsing network
-packets. Here it is used purely as a **decoder** — it has no concept of
-"spoofing"; it just hands back structured fields from each packet:
+## 4. Labelling (and its main limitation)
 
-```python
-packets = rdpcap(file_path)        # loads every packet in the pcapng file
-for pkt in packets:
-    if ARP in pkt:                  # is this an ARP packet?
-        src_ip  = pkt[ARP].psrc     # sender IP field
-        src_mac = pkt[ARP].hwsrc    # sender MAC field
-        dst_mac = pkt[ARP].hwdst
-        op      = pkt[ARP].op       # 1 = request, 2 = reply
-        pkt_time = pkt.time
-```
+Labels are **per capture file**: every packet in a normal capture is 0, every packet in an attack
+capture is 1. This is *weak labelling* — practical (nobody hand-labels thousands of packets) but
+imperfect: an attack capture also contains ordinary background ARP.
 
-Everything past this point — the actual feature engineering and the
-detection logic — is plain Python/pandas written for this project, not
-anything Scapy provides.
-
-## 4. Labelling: how each row gets its 0/1 class
-
-Labelling here is **per-file, not per-packet** — a hardcoded lookup in
-[`model_scripts/train.py`](model_scripts/train.py):
-
-```python
-LABEL_MAP = {
-    "arp_normal_traffic.pcapng": 0,
-    "arp_spoof_basic.pcapng": 1,
-    "arp_request_flooding.pcapng": 1,
-    "arp_gratuitous_announcement.pcapng": 1,
-    "arp_reply_race_condition.pcapng": 1,
-    "arp_spoofing_unicast_reply.pcapng": 1
-}
-```
-
-The assumption: *"whatever was happening when I captured this file applies
-to every packet in it."* If the file was captured while normal traffic was
-running, every packet in it → label `0`. If it was captured while an attack
-script was running, every packet in it → label `1`. This label is passed
-into `extract_arp_features(file_path, label)` and stamped onto every row
-pulled from that file.
-
-This is called **coarse / weak labelling**. It's a practical necessity
-(nobody manually labels thousands of individual packets), but it's an
-approximation — a normal-looking ARP request that happens to occur inside
-an attack-labeled capture still gets stamped "attack," even though in
-isolation it looks benign. This is one honest explanation for why recall
-isn't perfect (see Section 8).
-
-**Concrete proof this happens, from the actual dataset** — this real row
-comes from an attack-labeled file:
-
-```
-src_ip: 192.168.1.92   dst_ip: 192.168.1.1
-op: 1                   ← an ARP REQUEST, not a forged reply
-mac_conflict: 0         ← no conflicting MAC seen
-label: 1                ← still stamped "attack" anyway
-```
-
-By every feature value this row looks like a completely ordinary ARP
-request. It was labeled `1` purely because it came from a file where *an
-attack was happening somewhere in the session* — the code never checks
-whether this specific packet is actually malicious. See Section 12 for a
-proposed fix (per-packet labelling) and Section 13 for why this limitation
-is fine to report as-is without having fixed it yet.
+**Measured:** in `arp_spoof_basic` and `arp_gratuitous_announcement`, about half of the packets
+(47% / 51%) are plain ARP requests with no attack signal at all (no MAC mismatch, no conflict,
+not unsolicited, no multi-IP claims) yet are labelled "attack". That is largely label noise, not model
+failure, and it is the main reason Naive Bayes recall on those two captures is only ~45-50%. (Random Forest scores higher on them,
+so the noise is *partly*, not wholly, the explanation.) The proper fix is per-packet ground truth (e.g. the attacker's MAC for each
+capture), which this dataset does not provide; rule-derived labels would be circular because the same signals are
+model features. It is therefore reported as a limitation rather than "fixed".
 
 ## 5. Feature engineering
 
-Each ARP packet becomes one row with these columns (built in
-`extract_arp_features`):
+Per ARP packet, computed **separately inside each capture** (state resets per file), using only past packets:
 
-| Feature | Meaning | Why it matters for detection |
+| Feature | Meaning | Why it matters |
 |---|---|---|
-| `src_ip`, `dst_ip` | sender/target IP (label-encoded) | identity of the hosts involved |
-| `src_mac`, `dst_mac` | sender/target MAC (label-encoded) | identity of the hosts involved |
-| `op` | ARP opcode, 1=request / 2=reply | attacks are almost always carried via forged *replies* |
-| `is_broadcast` | 1 if destination MAC is `ff:ff:ff:ff:ff:ff` | gratuitous/broadcast spoofing sends unsolicited broadcast replies |
-| `mac_conflict` | 1 if this source IP was previously seen with a **different** MAC | **the direct signature of ARP spoofing** — one IP, two physical identities |
-| `interarrival_time` | time since the previous packet | floods produce abnormally small gaps |
-| `arp_reply_count` | running count of replies sent by this source | flooding/race attacks send many more replies than normal hosts |
-| `arp_reply_delay_ms` | time between a request and its matching reply | real replies vs. unsolicited/forged ones behave differently |
+| `op` | 1 request / 2 reply | attacks are mostly forged replies |
+| `is_broadcast` | Ethernet dst is `ff:ff:ff:ff:ff:ff` | gratuitous/flood traffic is broadcast |
+| `is_gratuitous` | sender IP == target IP | announcement-style poisoning |
+| `mac_conflict` | IP seen before with a different MAC | the literal definition of spoofing |
+| `ip_mac_count` | distinct MACs claimed for this IP | repeated identity changes |
+| `l2_ip_count` | distinct IPs claimed by this Ethernet sender | flooding/poisoning many IPs |
+| `l2_reply_rate_1s` | replies from this sender in the last 1 s | flood rate |
+| `arp_reply_count` | running reply count for the sender IP | volume |
+| `log_interarrival_ms` | log(1+gap to previous packet) | burst timing |
+| `log_reply_delay_ms` | log(1+request->reply delay), 0 if unmatched | forged replies have no real request |
 
-`mac_conflict` is maintained with a simple dictionary that remembers the
-last MAC seen for each IP:
+Two further columns are computed but **not used as model inputs**: `is_unsolicited_reply` (reply with no earlier request -
+it depends on the sniffer's viewpoint: 0% in one normal capture, 53-64% in others) and `eth_arp_mac_mismatch` (Ethernet
+src MAC != ARP sender MAC - in the attack captures this is an artifact of the attack tool, whose forged frames have
+Ethernet source `00:00:00:00:00:00`; a real attacker would use their own MAC). Dropping both did not change attack recall
+in leave-one-capture-out tests but removed a false-positive problem on new networks.
 
-```python
-mac_conflict = 0
-if src_ip in ip_mac_map and ip_mac_map[src_ip] != src_mac:
-    mac_conflict = 1
-ip_mac_map[src_ip] = src_mac
-```
+ARP probes (sender IP `0.0.0.0`) are excluded from the IP<->MAC bookkeeping because they carry no real sender IP.
+Timing features are log-transformed because raw gaps are extremely heavy-tailed, which suits neither
+Gaussian Naive Bayes nor a fair comparison across features.
 
-**Concrete proof it works, from the actual dataset:** `192.168.1.1` shows
-up with MAC `54:47:e8:37:e2:44` in some rows and `5a:9d:7f:00:5a:2c` in
-others. Same IP, two different MACs — `mac_conflict` fires 927 times
-across the 2090-row dataset.
+**What changed from the first version, and why** (useful to say in the viva):
 
-## 6. Building and saving the dataset
+| Problem found in review | Fix |
+|---|---|
+| `is_broadcast` was always 0 (it tested the ARP target MAC, which is `00:..` for requests) | now uses the **Ethernet** destination; added `is_gratuitous` and the windowed/count features (`ip_mac_count`, `l2_ip_count`, `l2_reply_rate_1s`) |
+| Label-encoded IP/MAC columns let the model memorise the capture file; fake ordinal order; crash on unseen addresses | identities removed from the model inputs (kept in the raw CSV); encoders deleted |
+| `interarrival_time` was computed across merged captures (gaps up to ~5 days) | computed per capture; log-scaled |
+| Random packet split; neighbouring near-identical packets straddled train/test; no `random_state` | chronological split per capture + leave-one-capture-out; fixed seeds, fully deterministic |
+| Isolation Forest/ensemble never evaluated; demo ran on a training file | NB, IF and ensemble evaluated on held-out data; `predict.py` takes any pcap and supports a `holdout/` folder |
+| Feature code copy-pasted in two scripts | single shared `features.py` (now also used by the simulator) |
+| README and EXPLANATION quoted different "latest" numbers | one source of truth: `results/metrics.md` |
 
-[`train.py`](model_scripts/train.py) assembles every pcap's rows into one
-pandas `DataFrame`, sorts by timestamp, fills in `interarrival_time`, and
-saves it to [`dataset/`](dataset/) in two stages:
+## 6. Dataset files
 
-- **`arp_dataset_raw.csv`** — human-readable IPs/MACs, straight after
-  extraction. This is "the dataset as created" — open this to show how raw
-  packets became structured rows.
-- **`arp_dataset_encoded.csv`** — after label-encoding, which is exactly
-  what gets fed into the models.
+**Size:** 9,243 *real* recorded packets = 7,786 training pool (5,883 normal, 1,903 attack; ~3:1) + 1,457 in a
+never-trained-on hold-out capture. Plus 3,980 *synthetic* rows, kept separate and not counted as recorded data (below).
 
-Current run: **2090 total rows** (187 normal, 1903 attack — the attack
-captures are simply longer/denser, which is why the split isn't 50/50).
+`train.py` assembles the rows and saves:
 
-## 7. Models used, and why these specific ones
+- `dataset/arp_dataset_raw.csv` — **real**, human-readable (IPs, MACs, Ethernet addresses, all features, diagnostic columns, label, capture name, network)
+- `dataset/arp_dataset_features.csv` — **real**, the exact model input (feature columns + label + capture)
+- `dataset/arp_dataset_holdout.csv` — **real**, the unseen hold-out capture
+- `dataset/arp_dataset_synthetic.csv` — **synthetic only** (`synthetic=1`)
+- `dataset/arp_dataset_balanced.csv` — real + synthetic with a `synthetic` column (0/1)
 
-Two models, deliberately chosen to complement each other:
+### Synthetic augmentation (disclosure)
 
-### Gaussian Naive Bayes — supervised classifier
-- **What it is:** assumes each feature is normally (Gaussian) distributed
-  within each class, and uses Bayes' theorem to compute which class
-  (Normal vs. Spoofed) a new row most likely belongs to, given its feature
-  values.
-- **Why chosen:** it's fast, simple, needs very little data to produce
-  reasonable estimates, and works well as a first supervised baseline for
-  a project where the feature set is small and largely independent
-  (timing, counts, flags) — exactly the kind of features Naive Bayes
-  handles well despite its "naive" independence assumption.
-- **Role here:** the main classifier — it directly learns "what attack
-  traffic looks like" from labeled examples.
+The teacher asked for 8k-10k records. We recorded 9,243 real packets, but the data is 3:1 normal-heavy and attack traffic can
+only be recorded in the lab, so `model_scripts/augment.py` generates 3,980 **synthetic** attack rows (SMOTE-style: a new row is
+an interpolation between a real attack packet and one of its 5 nearest neighbours in the same capture; binary/count columns
+are rounded; the 9-packet race-condition capture is not oversampled) to balance the classes at 5,883 / 5,883.
+
+- Synthetic rows are **always labelled** (`synthetic=1`, capture name `synthetic<-...`) and stored separately; they are never
+  described as recorded traffic.
+- They add class balance, **not information**: every row is an interpolation of packets we already have.
+- In every evaluation they are generated from the *training* part only; **all reported metrics use real packets only**.
+- **Result: they do not help.** Same-network NB recall is 0.792 with them vs 0.816 without; all-data results are identical;
+  and on leave-one-out `arp_normal_campus_wifi_03` the ensemble false-positive rate is 0.13 with them vs 0.02 without. The
+  shipped models are therefore trained on real packets only (`train.py --augment` trains with them). A fair thing to say in
+  the viva: we tried class balancing, measured it, and it did not improve the detector, so we kept the simpler model.
+
+## 7. Models and why
+
+### Gaussian Naive Bayes — supervised
+Assumes features are Gaussian and conditionally independent given the class, and applies Bayes' theorem.
+Fast, needs little data, a good interpretable baseline, and it was the steadiest model across networks. It is not claimed optimal.
+Its probabilities are overconfident (log loss ~4.4) because the independence assumption is violated
+(e.g. `l2_ip_count` and `l2_reply_rate_1s` are correlated) — rely on its class/ranking, not its probabilities.
 
 ### Isolation Forest — unsupervised anomaly detector
-- **What it is:** builds many random decision trees that try to isolate
-  each data point by repeatedly splitting on random features/thresholds.
-  Points that are "normal" (similar to the bulk of the data) take many
-  splits to isolate; outliers get isolated in very few splits. Points that
-  isolate fast are flagged as anomalies.
-- **Why chosen:** it's trained **only on normal traffic**, so it doesn't
-  need attack examples to work — it learns "what normal ARP behavior looks
-  like" and flags *any* deviation, including attack patterns the model
-  never explicitly saw. This is valuable because real-world attacks may
-  not look exactly like the 5 attack types captured here; an anomaly
-  detector generalizes better to unseen attack variants than a classifier
-  trained only on known attack labels.
-- **Role here:** a safety net / second opinion — catches anomalies Naive
-  Bayes might miss, without needing attack data to train on.
+Random trees isolate points; outliers isolate in few splits. Trained **only on normal packets** so it flags *any*
+deviation, including attack types never seen. `contamination=0.005` (tuned from 0.02, see Section 8b): by construction ~0.5% of
+normal training packets are flagged, which sets its false-positive budget. It catches flooding but misses quiet attacks.
 
-**Why both, instead of just one:** Naive Bayes is precise on attack
-patterns it has seen labeled examples of, but can't recognize a brand-new
-attack style it wasn't trained on. Isolation Forest can flag *any*
-deviation from normal without needing attack examples, but it can't
-explain *which known attack type* it resembles and may also flag unusual-
-but-harmless traffic. Combining them (Section 9) covers both gaps.
+### Ensemble
+Attack if **either** model flags it (OR). Missing an attack is costlier than a false alarm, so OR is meant to trade a few
+extra false positives for a few points more recall. After tuning, the Isolation Forest is less trigger-happy and on this data adds
+little beyond Naive Bayes (same-network ensemble recall 0.816 = Naive Bayes; it was 0.862 before tuning), so the OR rule now
+mostly adds false alarms on the all-data test.
 
-## 8. Evaluation of the Naive Bayes model
+### Logistic Regression and Random Forest — comparison only
+Trained under the same protocol (Section 8c). Random Forest is the model family the base paper uses.
 
-30% of the data held out as a test set (stratified by label). Latest run:
+## 8. Evaluation
 
-| Metric | Value | Meaning |
-|---|---|---|
-| Accuracy | 0.686 | fraction of all predictions correct |
-| Precision (Spoofed) | 0.995 | when it says "attack," it's almost never wrong |
-| Recall (Spoofed) | 0.659 | it misses about a third of actual attack packets |
-| F1 Score (Spoofed) | 0.792 | harmonic mean of precision/recall |
-| ROC AUC | 0.950 | how well the model separates the two classes overall |
-| Log Loss | 1.949 | penalizes confident-but-wrong probability estimates |
-| Cohen's Kappa | 0.244 | agreement with ground truth beyond chance |
-| Matthews Corr. | 0.363 | balanced correlation measure, robust to class imbalance |
+Four views, all produced by `train.py` into `results/metrics.md` (real packets only):
 
-Confusion matrix:
+1. **Same-network hold-out (192.168 only)** - the fairest view: normal and attack traffic from one environment,
+   chronological 70/30 split per capture (test: 56 normal / 571 attack).
+2. **All-data hold-out** - both networks (test: 1,765 normal / 571 attack). More normal packets, but network-confounded.
+3. **Leave-one-capture-out** - train on every other capture, test on the held-out one (generalisation to an unseen
+   attack type or unseen normal capture).
+4. **Unseen capture** - `holdout/arp_normal_holdout_2.pcapng` (1,457 evening packets), never part of training.
+
+Same-network hold-out:
+
+| Detector | Accuracy | Precision | Recall | F1 | FPR | ROC AUC | MCC |
+|---|---|---|---|---|---|---|---|
+| Naive Bayes | 0.831 | 0.998 | 0.816 | 0.898 | 0.018 | 0.911 | 0.522 |
+| Isolation Forest | 0.568 | 1.000 | 0.525 | 0.689 | 0.000 | 0.897 | 0.300 |
+| Ensemble (OR) | 0.831 | 0.998 | 0.816 | 0.898 | 0.018 | n/a | 0.522 |
+
+All-data hold-out: NB accuracy 0.968 / recall 0.872 / FPR 0.001 / AUC 0.981; Isolation Forest recall 0.536 / FPR 0.036;
+ensemble accuracy 0.941 / precision 0.886 / recall 0.872 / FPR 0.036.
+
+Leave-one-capture-out, ensemble: flooding 0.94, unicast 0.91, race condition 0.56 (9 packets), basic spoof 0.48,
+gratuitous 0.43; false-positive rate on held-out normal captures 0.03 (192.168, 187 pkts), 0.00 / 0.00 / 0.02 (the three
+172.16 captures).
+**Unseen normal capture** (`holdout/arp_normal_holdout_2.pcapng`, never trained on): NB flags 2.6%, IF 0.1%, ensemble
+**2.7% false-positive rate**.
+
+**Honest reading:**
+- Recall is 82-87% on the hold-outs and 91-94% on cleanly-signatured attacks never seen in training. Precision is 99.8% on
+  the same-network view and 89% on the all-data view.
+- The ~45-50% on basic spoof and gratuitous is largely **label noise** (Section 4), not detector failure.
+- **The false-positive rate on genuinely new traffic is the weak spot.** An earlier 1.4% came from one daytime capture; the
+  evening capture gave 10.6% when training had ~6.2k real records, 5.3% after a 60-minute evening capture was added, and
+  2.7% after cross-validated tuning (Section 8b). Normal traffic drifts with time of day; do not quote 1.4%.
+- The 192.168 false-positive rate rests on only 56 test packets and a single 187-packet normal capture on that network.
+- Earlier versions of this project reported AUC 0.954 on a leaky random split; removing the leakage is why the numbers moved.
+  This is exactly the kind of effect a plain random train/test split hides.
+
+Accuracy alone would mislead on imbalanced data, so precision/recall/F1/FPR/AUC/MCC are reported.
+
+## 8b. Tuning, tracking and tests (training you can repeat)
+
+An experiment answers "does it work once". Training you can repeat also needs settings that were chosen on purpose,
+results you can trace, and checks that fail when something breaks. The project has four pieces:
+
+1. **Hyper-parameter tuning** (`model_scripts/tune.py`, output `results/tuning.md`, settings in `config.json`).
+   Each candidate setting is scored by **leave-one-capture-out cross-validation on the training pool only**: hold one whole
+   capture out, train on the rest, and measure what share of the held-out capture is flagged (recall for an attack capture,
+   false-alarm rate for a normal one). Score = mean attack recall - mean normal false-alarm rate, averaged per capture so a
+   big capture cannot dominate. A setting changes only if a candidate beats the current value by more than 0.005. The unseen
+   evening capture is never used, so it stays an honest final test. Result: Isolation Forest `contamination` 0.02 -> 0.005
+   (score 0.640 -> 0.653), Random Forest `min_samples_leaf` 1 -> 5, Logistic Regression `C` 1 -> 10; Naive Bayes smoothing unchanged.
+   *Effect:* unseen-capture false alarms 5.3% -> 2.7%; *cost:* ensemble same-network recall 0.862 -> 0.816, and the Isolation
+   Forest now adds little beyond Naive Bayes on this data.
+2. **Run tracking** (`model_scripts/runlog.py`). Every `train.py` run writes `results/runs/<id>/` with the settings, metrics,
+   a SHA-256 hash of every capture file and the git commit. `models/metadata.json` stores the run id, so any saved model can be
+   traced back to its exact data and settings.
+3. **Automated tests** (`tests/`, run with `python -m pytest`; 28 tests, ~25 s). They check that features are causal (adding later
+   packets never changes earlier rows) and deterministic; that the pcap and live paths compute identical features; that batch and
+   incremental extraction give identical rows; that the chronological split never puts a training packet after a test packet;
+   that synthetic rows are labelled and stay out of test data; that training with the same seed gives identical predictions; that
+   saved models reload identically; that the simulator's ground truth is exact; and that the alert rule stays quiet on noise and
+   busy hosts. A deliberately leaky random split makes the split test fail, so the tests do detect leakage.
+4. **Pinned environment** (`requirements.txt`). Exact versions, because pickled scikit-learn models only load reliably with the
+   version that trained them.
+
+## 8c. Model comparison (Logistic Regression and Random Forest)
+
+`python model_scripts/compare_models.py` runs the same real-packet tests for the two extra models (settings from `config.json`):
+
+| Test | Naive Bayes | Logistic Regression | Random Forest |
+|---|---|---|---|
+| All-data hold-out: recall / FPR / MCC | 0.872 / 0.001 / 0.914 | 0.869 / 0.011 / 0.888 | **0.949 / 0.007 / 0.951** |
+| Same-network 192.168: recall / FPR | 0.816 / 0.018 | 0.860 / 0.018 | 0.918 / **0.071** |
+| Unseen evening capture: FPR | **0.030** | 0.038 | 0.031 |
+| Leave-one-out, normal 192.168 capture: FPR | **0.03** | 0.42 | 0.32 |
+| Leave-one-out recall: flooding / unicast / basic / gratuitous | 0.94 / 0.91 / 0.48 / 0.43 | 1.00 / 0.66 / 0.58 / 0.59 | 1.00 / 0.91 / 0.94 / 0.84 |
+
+Random Forest has the best recall, but it flags 7.1% of normal packets in the same-network test and 32% of the lab-LAN normal
+capture in leave-one-out, so part of its gain may be recognising the network rather than the attack; with one 187-packet normal
+capture on the attack network we cannot tell. Naive Bayes stays the shipped model because it is the most stable.
+
+## 9. Inference
+
+`python model_scripts/predict.py <capture.pcapng> [--label 0|1]` extracts the same features via `features.py`,
+runs both models, ORs them, prints the flagged share per detector (and FPR/recall when `--label` is given), and writes
+per-packet verdicts to `results/prediction_output.csv`. The old demo on a training pcap was misleading; use a capture
+from `pcap_files/holdout/` for an unbiased demonstration (e.g. `holdout/arp_normal_holdout_2.pcapng`: 2.7% flagged).
+
+## 9b. The simulator web app
+
+`streamlit run simulator/app.py` (details and demo script: README and `docs/SIMULATOR_DEMO_GUIDE.md`).
+
+- **What it is.** A traffic generator and live dashboard, not a replay of the dataset. In the default mode it captures the ARP
+  packets of the real network passively (ARP filter only, in memory, nothing saved or transmitted), runs the detectors on them,
+  and lets you inject simulated attacks into that stream with buttons. Other modes: a virtual LAN (works offline), a scripted
+  run, and a replay of recorded captures.
+- **What is real and what is simulated.** Background traffic is real (captured live). Injected attacks are simulated forged
+  packets built from real hosts seen so far, added to the in-memory stream only. The detectors were trained on the recorded
+  dataset. Because the attacks are simulated and cleaner than the lab ones, simulator scores are illustrations, not accuracy
+  evidence; the accuracy numbers come from the recorded captures (Section 8).
+- **Shipped vs comparison cards.** Naive Bayes, Isolation Forest and the ensemble are the main cards. Logistic Regression,
+  Random Forest and the majority vote are shown separately because on a network far busier than their training data they can flag
+  every packet (observed on campus Wi-Fi at ~100-200 ARP packets/s vs a training maximum of 64/s); a "busy network" banner
+  appears above ~33 packets/s (99.9th percentile of normal training traffic).
+- **Alert rule** (`model_scripts/alerting.py`): ALERT needs a sender with at least 3 flagged packets and over half of its packets
+  flagged in 10 s; "stray flags" are flagged packets that do not look like an attacker (noise, or a busy host such as a scanner
+  with ~2% of its packets flagged). A single flagged packet is not an alert. In tests all five attack types raised an ALERT on
+  Naive Bayes/ensemble within 1-2 s.
+- **Performance.** Feature extraction is incremental, so an update costs ~0.3 s even at ~200 packets/s, and a session can run
+  60,000 packets.
+
+## 10. Files
 
 ```
-              Pred Normal   Pred Spoofed
-Actual Normal        54            2
-Actual Spoofed      195          376
+Base Paper/                 the base paper PDF (Singhal and Kumar, 2026)
+reference_papers/           other papers read + index (README.md); includes the earlier Ali et al. 2025 preprint
+Presentation/               project slides and the design reference deck
+pcap_files/                 raw captures (top level = training data; holdout/ = unseen test data)
+dataset/                    real: arp_dataset_raw/features/holdout.csv; SYNTHETIC: arp_dataset_synthetic.csv, arp_dataset_balanced.csv
+model_scripts/features.py   shared feature extraction (FeatureExtractor: incremental, same rows as batch)
+model_scripts/augment.py    labelled synthetic (SMOTE-style) oversampling
+model_scripts/train.py      dataset build, training, evaluation, report, run record
+model_scripts/tune.py       leave-one-capture-out hyper-parameter selection
+model_scripts/compare_models.py   Logistic Regression / Random Forest vs Naive Bayes
+model_scripts/predict.py    ensemble inference on any capture
+model_scripts/simulate.py   virtual LAN, live capture and attack injection for the simulator
+model_scripts/alerting.py   when a detector raises an ALERT in the simulator (repeated flags from one sender)
+model_scripts/config.py, model_factory.py   settings loader and model builders (one place for every setting)
+model_scripts/runlog.py     run tracking (data SHA-256, settings, git commit)
+simulator/app.py            Streamlit web app
+config.json                 every training setting (seed, split, contamination, RF/LR parameters), written by tune.py
+models/saved_models/        naive_bayes_model.pkl, isolation_forest_model.pkl (joblib)
+models/metadata.json        feature list, sklearn version, settings, training captures, run id, data hash, git commit
+results/                    metrics.md/json, model_comparison.md/json, tuning.md/json, evaluation.png, prediction_output.csv, runs/<id>/
+tests/                      28 pytest tests (leakage, determinism, round-trip, incremental extraction, alert rule, simulator ground truth)
+docs/                       RECORDING_NORMAL_TRAFFIC.md (Wireshark guide), SIMULATOR_DEMO_GUIDE.md (how to demo)
+requirements.txt            pinned versions
 ```
 
-**Honest reading:** precision is excellent (very few false alarms), but
-recall is moderate — some attack packets get missed. The likely cause is
-coarse labelling (Section 4): some packets inside an "attack" capture
-behave identically to normal traffic (e.g., the first packet before a
-repeated-reply/mac-conflict pattern builds up), so a per-packet feature
-view can't distinguish them. ROC-AUC of 0.95 shows the classes are still
-well separated overall.
+`joblib` is used instead of `pickle` because it handles the large numpy arrays inside sklearn models efficiently.
+There are no label encoders any more: the models take only numeric behavioural features.
 
-## 9. Inference / ensemble logic
+## 11. Likely teacher questions
 
-[`model_scripts/predict.py`](model_scripts/predict.py) loads both saved
-models plus the saved encoders, extracts features from a **new** pcap the
-same way `train.py` does, and runs both models:
+**What is your base paper, and what did you do better?** Singhal and Kumar (2026, Frontiers in Big Data), a cost-sensitive Random
+Forest for ARP spoofing. Its headline score comes from splitting one public dataset into train and test, plus one extra check on
+a second public dataset. Both datasets are ready-made, and neither is traffic the authors recorded or an attack type held out of
+training. We tested on traffic we recorded, on recordings and attack types held out of training, on a separate evening recording,
+and on live traffic. We claim stronger testing, not higher accuracy: the data and task differ, so the numbers are not comparable.
 
-```python
-nb_preds = nb_model.predict(df[features])
-iso_preds_raw = iso_model.predict(df[features])          # 1 = normal, -1 = anomaly
-iso_preds = [0 if pred == 1 else 1 for pred in iso_preds_raw]
+**Why did you change the base paper?** To use a peer-reviewed journal paper newer than November 2025 that is directly about ARP
+spoofing and whose evaluation design leaves the gap above.
 
-# OR logic: flagged as attack if EITHER model says attack
-ensemble_preds = [1 if (nb or iso) else 0 for nb, iso in zip(nb_preds, iso_preds)]
-```
+**Did the paper do anything better than you?** Yes: a much larger dataset, higher headline scores, a cost-sensitive threshold that
+caps missed attacks at 0.5%, and a cross-dataset check. We did not do the cost-sensitive threshold; it is our first future-work item.
 
-Results (per-packet Normal/Attack verdicts from each model and the
-combined ensemble) are written to [`prediction_output.csv`](prediction_output.csv).
+**Did you test on a completely different network?** No. The held-out evening capture is the same campus Wi-Fi at a different time.
+The only different-network test is the lab-LAN normal capture held out in leave-one-out (3% false alarms), and the lab network could
+not be revisited. We list this as a limitation.
 
-OR logic was chosen deliberately: for a security detection system, a
-**missed attack (false negative) is more costly than a false alarm (false
-positive)** — an analyst can dismiss a false alarm, but a missed attack
-goes undetected. OR logic trades some extra false positives for fewer
-missed attacks.
+**Why Naive Bayes?** Fast, simple, little data needed, interpretable, and the steadiest across networks (Section 8c). We also
+trained Logistic Regression and Random Forest to compare; Random Forest has the best recall but may be recognising the network.
 
-## 10. `models/` folder — what every file is
+**What does "naive" mean?** Features are assumed conditionally independent given the class — false here (rate and count
+features correlate), which mainly shows up as overconfident probabilities.
 
-```
-models/
-├── encoders/
-│   ├── src_ip_encoder.pkl
-│   ├── dst_ip_encoder.pkl
-│   ├── src_mac_encoder.pkl
-│   └── dst_mac_encoder.pkl
-└── saved_models/
-    ├── naive_bayes_model.pkl
-    └── isolation_forest_model.pkl
-```
+**Why train Isolation Forest only on normal data?** It models "normal" and flags deviations, so it can catch unseen attack
+types; training on both would turn it into a worse classifier. Honest note: after tuning it adds little beyond Naive Bayes on our
+data (it only helps on flooding).
 
-- **`encoders/*.pkl`** — one `sklearn.preprocessing.LabelEncoder` per
-  identifier column (`src_ip`, `dst_ip`, `src_mac`, `dst_mac`). Each one is
-  a saved lookup table mapping a specific string (e.g. `"192.168.1.1"`) to
-  the same integer every time (e.g. `2`). Saved with `joblib.dump()` during
-  training, and reloaded with `.transform()` (not `.fit_transform()`) at
-  prediction time, so a new pcap's IPs/MACs get encoded consistently with
-  what the models were trained on.
-- **`saved_models/naive_bayes_model.pkl`** — the fitted `GaussianNB`
-  object: it already contains the learned mean/variance of each feature
-  for each class, computed once during training. At prediction time it
-  just plugs new rows into Bayes' theorem using those stored numbers — no
-  retraining.
-- **`saved_models/isolation_forest_model.pkl`** — the fitted
-  `IsolationForest`: contains the actual trained ensemble of random
-  isolation trees built from normal-only training data.
+**How did you choose the settings?** By leave-one-capture-out cross-validation on the training pool only (Section 8b); the unseen
+capture was never used. It changed Isolation Forest `contamination` from 0.02 to 0.005, which cut unseen false alarms from 5.3% to
+2.7% but lowered the ensemble's same-network recall from 0.862 to 0.816.
 
-`joblib` is used instead of plain `pickle` because it's optimized for
-objects containing large numpy arrays (which is what trained sklearn
-models are internally) — faster to save/load.
+**How are labels assigned?** Per capture file (Section 4) — weak labels, with measured noise (~half of two attack captures
+is benign-looking). Per-packet ground truth would be the fix.
 
-## 11. Likely teacher questions (with answers)
+**Why is recall below precision?** Mostly the label noise above plus first-packet-of-a-burst effects; the cleanly-signatured
+attacks reach 91-94% in leave-one-capture-out.
 
-**Q: Why Naive Bayes and not another classifier (e.g. decision tree, SVM)?**
-A: Naive Bayes is fast, interpretable, works well with small/independent
-numeric features, and needs little data to get stable probability
-estimates — a reasonable baseline given the feature set size here. It's
-explicitly a baseline, not claimed to be the best possible classifier; a
-tree-based or boosting model could reasonably outperform it and is a
-natural next step.
+**Did Scapy detect the attack?** No — it only decodes packets. All detection logic is custom Python.
 
-**Q: What does "naive" mean in Naive Bayes?**
-A: It assumes all features are conditionally independent given the class —
-an assumption that's technically false here (e.g., `arp_reply_count` and
-`interarrival_time` are correlated), but the model still performs well in
-practice despite that violated assumption, which is typical for Naive
-Bayes.
+**Most important features?** `mac_conflict`, `ip_mac_count` and `l2_ip_count` — direct on-wire evidence of one identity
+claiming another (conflict, repeated MAC changes, one sender claiming many IPs). Limit: a slow, careful spoofer that never
+changes the claimed MAC for an IP and sends at a low rate would evade the rate and count features.
 
-**Q: Why train Isolation Forest only on normal data?**
-A: Because it's designed for anomaly detection — it needs to learn what
-"normal" looks like, then anything that deviates (including attack types
-never seen in training) gets flagged. Training it on a mix of both would
-defeat the purpose; it would just become a worse classifier.
+**Why did you not use `eth_arp_mac_mismatch` / `is_unsolicited_reply`?** Both are computed but excluded. The mismatch is an
+artifact of the attack tool (forged frames had Ethernet src 00:00:00:00:00:00), and the unsolicited-reply share depends on
+the sniffer's viewpoint (0% to 64% in normal captures). Dropping them did not hurt recall and cut false positives on a new network.
 
-**Q: How are labels assigned — did you label every packet by hand?**
-A: No — labelling is per-file (Section 4): every packet from a capture
-taken while an attack was running is labeled 1, every packet from a normal
-capture is labeled 0. It's a practical weak-labelling approach, with the
-limitation that some individual packets inside an "attack" file may still
-look behaviorally normal.
+**Do the results hold on another network?** Partly tested: an unseen 1,457-packet evening capture from campus Wi-Fi gives a
+2.7% false-positive rate (a daytime one gave 1.4% earlier; the evening one was 10.6% at first, 5.3% after more evening data, 2.7% after tuning).
+All attacks and one normal capture are from the lab LAN, so a model could partly learn the network; that is why same-network
+results are reported separately.
 
-**Q: Why is recall lower than precision?**
-A: The model rarely raises a false alarm (precision 0.995) but misses
-roughly a third of true attack packets (recall 0.659). Likely cause:
-per-packet features can't always distinguish early/isolated packets
-within an attack burst from genuinely normal traffic — e.g. before
-`mac_conflict` or `arp_reply_count` builds up. Tracking behavior across a
-packet window instead of single packets would likely improve recall.
+**How big is the dataset, and is any of it synthetic?** 9,243 real recorded packets (7,786 training + 1,457 held-out). A further
+3,980 rows are synthetic (SMOTE-style), stored in separate labelled files, never used in any test, and not counted in the 9,243.
+They did not improve results, so the shipped models use real data only.
 
-**Q: What is Scapy's exact role — did it detect the attack?**
-A: No. Scapy only decodes the pcapng file into structured packet fields
-(`psrc`, `hwsrc`, `op`, etc.). All detection logic — `mac_conflict`,
-reply counting, delay computation, labelling — is custom Python code
-written on top of what Scapy extracts.
+**Why did you not just add more data to reach 8-10k?** We did, for normal traffic (real recordings). Attack traffic can only be
+recorded in the lab with the attack scripts; generating it on a shared network is not acceptable. Oversampling the attack class
+synthetically was tried and measured, and it added balance but no information.
 
-**Q: What is `mac_conflict` and why is it the most important feature?**
-A: It's 1 if an IP address was previously seen associated with a different
-MAC address. This is the literal definition of ARP spoofing on the wire —
-one IP claimed by two physical identities — so it's the most direct
-signal available, confirmed by example in Section 5.
+**Why did you remove the IP/MAC columns from the model?** With label encoding they imposed a fake order, let the model
+memorise which capture a packet came from (attack captures contain 1108 distinct source MACs vs 7 in normal), and made
+inference crash on any new address. Behavioural features generalise to new networks.
 
-**Q: Why use label encoding instead of one-hot encoding for IP/MAC?**
-A: IP/MAC columns have many unique values (high cardinality); one-hot
-encoding would create hundreds of sparse columns. Label encoding keeps it
-to a single integer column per feature, which Naive Bayes and Isolation
-Forest can both consume directly, at the cost of implying an arbitrary
-ordinal relationship that doesn't really exist (a trade-off worth
-acknowledging if pushed on it).
+**Why a chronological split, not random?** Packets in a burst are near-duplicates; a random split puts twins in train and
+test and inflates scores (our own earlier leaky random split gave AUC 0.954). Chronological + leave-one-capture-out is stricter.
 
-**Q: What happens if a new IP/MAC appears at prediction time that wasn't
-in the training data?**
-A: `LabelEncoder.transform()` will raise an error, since it only knows the
-values it was fit on. This is a known limitation of this approach — in
-production you'd want either a fallback "unknown" bucket or a feature
-representation that doesn't require a fixed vocabulary.
+**Why OR for the ensemble?** Security trade-off: false negatives cost more than false alarms. Honest note: after tuning, the
+ensemble's recall equals Naive Bayes alone on the all-data test and it adds ~60 false alarms, so the OR rule currently buys little.
 
-**Q: Why combine two models with OR logic instead of just picking the
-better one?**
-A: They catch different things — Naive Bayes recognizes patterns similar
-to known labeled attacks, Isolation Forest flags *any* deviation from
-normal even if it's a novel attack pattern. OR logic favors catching more
-attacks (fewer missed detections) at the cost of more false positives,
-which is the right trade-off for a security detection use case.
+**Is the dataset balanced?** No: the real data is ~3:1 normal (5,883 vs 1,903). A synthetic-balanced file exists but did not
+improve results, so accuracy is not used alone; precision/recall/FPR/MCC are reported.
 
-**Q: Is this dataset balanced?**
-A: No — 1903 attack rows vs. 187 normal rows (roughly 10:1), because the
-attack captures are longer/denser than the normal baseline capture. This
-imbalance is part of why metrics beyond plain accuracy (precision/recall/
-F1/ROC-AUC/Kappa/MCC) are reported — accuracy alone would be misleading on
-an imbalanced dataset.
+**What is the simulator, and is it real?** A live dashboard. The background traffic is real ARP traffic captured passively
+from the network; the attacks are simulated packets injected into the in-memory stream by buttons. Nothing is transmitted on the
+network. Its scores are illustrations; the accuracy evidence is the recorded-capture results.
 
-**Q: Is there any deep learning in this part of the project?**
-A: No — this folder is deliberately classical ML only (Naive Bayes +
-Isolation Forest, both scikit-learn). A separate experimental pipeline in
-the full project explores a neural-network (ANN) ensemble, but it's kept
-out of this submission.
+**Why not attack the real network?** It would poison other students' ARP caches on a shared network. Attacks are only injected
+into the program's memory.
 
----
+**Why does the simulator sometimes show comparison models in red?** On a network far busier than the training data, Logistic
+Regression and Random Forest flag every packet. That is a real generalisation limit, so they are shown separately from the shipped
+detectors, with a busy-network warning.
 
-## 12. Proposed improvement: per-packet labelling (not yet implemented)
+**What does an ALERT mean in the simulator?** A sender had at least 3 flagged packets and over half of its recent packets flagged
+in 10 seconds. A single flagged packet is only a "stray flag".
 
-The labelling limitation in Section 4 has a concrete fix, scoped but
-intentionally not yet built:
+**Limitations?** Only 187 normal packets on the attack network, small attack captures (1,903 packets, 9 in one capture), a lab
+network that could not be revisited, normal captures mostly from a different network; unseen evening false-positive rate 2.7%;
+weak labels; GaussianNB probabilities are overconfident; forging both MAC fields defeats one feature; the Isolation Forest adds
+little; results are lab-scale, not production-validated.
 
-**Tier 1 — rule-based heuristics (no extra information needed):**
+**Is there deep learning here?** No — deliberately classical. See the future work in the README.
 
-| Rule | Catches |
-|---|---|
-| `mac_conflict == 1` on this specific row | the forged reply itself (basic spoof, race condition) |
-| `op == 2` and `is_broadcast == 1` with no matching prior request | gratuitous ARP (unsolicited broadcast reply) |
-| `arp_reply_count` for this source crossing a threshold in a short time window | flooding |
+## 12. Limitations and next steps
 
-Packets inside an attack-labeled file that don't trip any rule would stay
-labeled `0` — directly fixing the exact problem shown in Section 4 (the
-`op=1` request wrongly stamped `1`).
-
-**Tier 2 — known-attacker-identity rule:** only possible where the
-attack-generation script documents a fixed attacker MAC/IP. Checked this
-repo: only [`flood.py`](../Results/Types/ARP%20Flooding/flood.py) hardcodes
-one (`ATTACKER_MAC = "b2:25:ee:01:b9:b6"`), and even there it randomizes
-the forged MAC per packet (`random_mac()`), so this rule turns out to be
-less reliable than it first sounds — Tier 1's broadcast/reply-rate
-heuristic is the more realistic signal for that attack type in practice.
-
-**Honest limitation of this fix itself:** it replaces "trust the file"
-with "trust a hand-written rule" — better because it's packet-content-
-aware, but still a heuristic requiring manual threshold tuning (e.g. what
-reply-rate counts as "flooding"), validated by spot-checking flagged vs.
-unflagged packets in Wireshark rather than independently certified ground
-truth. This is worth stating plainly if asked, rather than presenting the
-improved labels as perfect.
-
-If/when implemented, this would run as a separate relabelling step
-(`arp_dataset_raw.csv` → per-packet-ruled relabel → `arp_dataset_perpacket.csv`),
-kept alongside the original dataset so both labelling strategies — and
-the resulting model metrics — can be compared directly.
-
-## 13. Reporting progress without this being implemented yet
-
-Not having implemented Section 12 yet is not a weakness to hide — it's a
-legitimate, explainable project state:
-
-- **Per-file labelling is a standard, defensible first-pass approach** for
-  bootstrapping a labeled dataset without manually annotating every
-  packet — not a mistake, a normal starting point.
-- **Identifying the limitation yourself, with a concrete fix scoped out,
-  is worth more than silently patching it.** Being able to explain *why*
-  `mac_conflict`/broadcast/reply-rate are reasonable heuristics, and what
-  their false-positive risk is, demonstrates understanding — mechanically
-  implementing a fix you can't defend under questioning is the riskier
-  option.
-- **What actually matters for evaluation:** having a working end-to-end
-  pipeline (pcap → features → dataset → trained models → metrics), being
-  able to explain every choice made (labelling, feature engineering,
-  model choice, metric interpretation), and being upfront about
-  limitations. This submission has all of that already.
-- **A reasonable week-by-week narrative:** this week — pipeline, dataset,
-  two trained models, full metrics, limitations identified. Next
-  checkpoint (if applicable) — implement Section 12's per-packet
-  labelling and show a before/after metrics comparison. Showing a project
-  visibly evolve across checkpoints generally reads better in evaluation
-  than presenting everything finished at once with no visible process.
+1. **Cost-sensitive, false-negative-constrained threshold** (the base paper's idea): choose the decision threshold on validation data
+   so that missed attacks stay under a set limit; our basic-spoof recall of 0.48 is the kind of weakness this targets.
+2. **Per-packet ground truth:** identify the attacking host's MAC for each attack capture and label by sender, removing the
+   file-level label noise that caps Naive Bayes recall on basic-spoof/gratuitous at ~50%.
+3. **Normal and attack traffic from more networks** (the lab network could not be revisited), to separate attack signal from
+   network fingerprints and settle Random Forest vs Naive Bayes.
+4. Calibrate probabilities (`CalibratedClassifierCV`), add confidence intervals to the small same-network test, and report
+   feature drift on new captures.
+5. Deep models from the literature (DNN, LSTM/1D-CNN on packet windows, autoencoders) if the data grows.

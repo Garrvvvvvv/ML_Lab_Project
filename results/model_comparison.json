@@ -1,0 +1,235 @@
+{
+  "holdout": {
+    "Naive Bayes": {
+      "accuracy": 0.9683219178082192,
+      "precision": 0.9979959919839679,
+      "recall": 0.87215411558669,
+      "f1": 0.930841121495327,
+      "false_positive_rate": 0.0005665722379603399,
+      "kappa": 0.9104174720754205,
+      "mcc": 0.9138955712624759,
+      "confusion_matrix": [
+        [
+          1764,
+          1
+        ],
+        [
+          73,
+          498
+        ]
+      ],
+      "roc_auc": 0.9813765423217555
+    },
+    "Logistic Regression": {
+      "accuracy": 0.959332191780822,
+      "precision": 0.9612403100775194,
+      "recall": 0.8686514886164624,
+      "f1": 0.9126034958601656,
+      "false_positive_rate": 0.0113314447592068,
+      "kappa": 0.8861925372828161,
+      "mcc": 0.8881224364391407,
+      "confusion_matrix": [
+        [
+          1745,
+          20
+        ],
+        [
+          75,
+          496
+        ]
+      ],
+      "roc_auc": 0.9846747666982532
+    },
+    "Random Forest": {
+      "accuracy": 0.9820205479452054,
+      "precision": 0.9765765765765766,
+      "recall": 0.9492119089316988,
+      "f1": 0.9626998223801065,
+      "false_positive_rate": 0.0073654390934844195,
+      "kappa": 0.9508586414602164,
+      "mcc": 0.951025303170244,
+      "confusion_matrix": [
+        [
+          1752,
+          13
+        ],
+        [
+          29,
+          542
+        ]
+      ],
+      "roc_auc": 0.9980199739039406
+    }
+  },
+  "same_network": {
+    "192.168": {
+      "results": {
+        "Naive Bayes": {
+          "accuracy": 0.8309409888357256,
+          "precision": 0.9978586723768736,
+          "recall": 0.8161120840630472,
+          "f1": 0.8978805394990366,
+          "false_positive_rate": 0.017857142857142856,
+          "kappa": 0.43442371842875616,
+          "mcc": 0.5221980569512188,
+          "confusion_matrix": [
+            [
+              55,
+              1
+            ],
+            [
+              105,
+              466
+            ]
+          ],
+          "roc_auc": 0.9105110082561921
+        },
+        "Logistic Regression": {
+          "accuracy": 0.8708133971291866,
+          "precision": 0.9979674796747967,
+          "recall": 0.8598949211908932,
+          "f1": 0.9238005644402634,
+          "false_positive_rate": 0.017857142857142856,
+          "kappa": 0.5146363141145102,
+          "mcc": 0.5842439296312749,
+          "confusion_matrix": [
+            [
+              55,
+              1
+            ],
+            [
+              80,
+              491
+            ]
+          ],
+          "roc_auc": 0.9407993495121341
+        },
+        "Random Forest": {
+          "accuracy": 0.9186602870813397,
+          "precision": 0.9924242424242424,
+          "recall": 0.9176882661996497,
+          "f1": 0.9535941765241128,
+          "false_positive_rate": 0.07142857142857142,
+          "kappa": 0.628593330778076,
+          "mcc": 0.6618829076235614,
+          "confusion_matrix": [
+            [
+              52,
+              4
+            ],
+            [
+              47,
+              524
+            ]
+          ],
+          "roc_auc": 0.9845196397297973
+        }
+      },
+      "test_normal": 56,
+      "test_attack": 571
+    }
+  },
+  "leave_one_capture_out": [
+    {
+      "capture": "arp_gratuitous_announcement.pcapng",
+      "label": 1,
+      "packets": 182,
+      "Naive Bayes": 0.4340659340659341,
+      "Logistic Regression": 0.5934065934065934,
+      "Random Forest": 0.8406593406593407
+    },
+    {
+      "capture": "arp_normal_campus_wifi_02.pcapng",
+      "label": 0,
+      "packets": 1530,
+      "Naive Bayes": 0.0,
+      "Logistic Regression": 0.02875816993464052,
+      "Random Forest": 0.009150326797385621
+    },
+    {
+      "capture": "arp_normal_campus_wifi_03.pcapng",
+      "label": 0,
+      "packets": 3017,
+      "Naive Bayes": 0.006629101756711966,
+      "Logistic Regression": 0.006297646668876367,
+      "Random Forest": 0.008949287371561154
+    },
+    {
+      "capture": "arp_normal_traffic.pcapng",
+      "label": 0,
+      "packets": 187,
+      "Naive Bayes": 0.026737967914438502,
+      "Logistic Regression": 0.42245989304812837,
+      "Random Forest": 0.32085561497326204
+    },
+    {
+      "capture": "arp_reply_race_condition.pcapng",
+      "label": 1,
+      "packets": 9,
+      "Naive Bayes": 0.5555555555555556,
+      "Logistic Regression": 0.4444444444444444,
+      "Random Forest": 0.7777777777777778
+    },
+    {
+      "capture": "arp_request_flooding.pcapng",
+      "label": 1,
+      "packets": 1348,
+      "Naive Bayes": 0.935459940652819,
+      "Logistic Regression": 0.9970326409495549,
+      "Random Forest": 0.9970326409495549
+    },
+    {
+      "capture": "arp_spoof_basic.pcapng",
+      "label": 1,
+      "packets": 213,
+      "Naive Bayes": 0.4835680751173709,
+      "Logistic Regression": 0.5774647887323944,
+      "Random Forest": 0.9436619718309859
+    },
+    {
+      "capture": "arp_spoofing_unicast_reply.pcapng",
+      "label": 1,
+      "packets": 151,
+      "Naive Bayes": 0.9139072847682119,
+      "Logistic Regression": 0.6556291390728477,
+      "Random Forest": 0.9072847682119205
+    },
+    {
+      "capture": "new_File_for normal_traffic.pcapng",
+      "label": 0,
+      "packets": 1149,
+      "Naive Bayes": 0.0017406440382941688,
+      "Logistic Regression": 0.047867711053089644,
+      "Random Forest": 0.024369016536118365
+    }
+  ],
+  "unseen_holdout_fpr": {
+    "Naive Bayes": 0.029512697323266987,
+    "Logistic Regression": 0.03774879890185312,
+    "Random Forest": 0.03088538091969801
+  },
+  "rf_feature_importance": {
+    "ip_mac_count": 0.24191512336975693,
+    "is_broadcast": 0.19893288301099718,
+    "arp_reply_count": 0.1531834198330259,
+    "l2_ip_count": 0.13614775360167597,
+    "l2_reply_rate_1s": 0.11094532212301328,
+    "log_interarrival_ms": 0.09824006986769995,
+    "mac_conflict": 0.032648674666163294,
+    "op": 0.018805226934982554,
+    "log_reply_delay_ms": 0.008450471251151118,
+    "is_gratuitous": 0.0007310553415339628
+  },
+  "lr_coefficients": {
+    "ip_mac_count": 23.222031042575082,
+    "arp_reply_count": -16.571756195276986,
+    "l2_ip_count": 11.027884294634514,
+    "is_broadcast": 0.7490577611004476,
+    "op": -0.627212383176991,
+    "log_interarrival_ms": 0.49918914053793295,
+    "log_reply_delay_ms": -0.17891822811783753,
+    "mac_conflict": 0.10711084286018462,
+    "is_gratuitous": 0.09257158993238104,
+    "l2_reply_rate_1s": 0.04253861615600328
+  }
+}

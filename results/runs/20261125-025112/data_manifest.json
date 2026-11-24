@@ -1,0 +1,52 @@
+[
+  {
+    "file": "pcap_files/arp_gratuitous_announcement.pcapng",
+    "sha256": "4d32c70dd7958a3ff190803592eb794c1fd28baa9e0f77fbc0d07717a7bc0add",
+    "bytes": 168656
+  },
+  {
+    "file": "pcap_files/arp_normal_campus_wifi_02.pcapng",
+    "sha256": "3dd34f98f6c2846e40d1c56013b8d284ab9263d0f873d0fa1a5e57bdfd10c9dd",
+    "bytes": 140620
+  },
+  {
+    "file": "pcap_files/arp_normal_campus_wifi_03.pcapng",
+    "sha256": "8b59aa3a9bb55eafd554e672a3de847ae02c08f5df025e9d69d834a2054c8349",
+    "bytes": 265708
+  },
+  {
+    "file": "pcap_files/arp_normal_traffic.pcapng",
+    "sha256": "ecf1139afd5ac002eac81c3bcb9aa8670b4e6c574f79138933fabe82586ec202",
+    "bytes": 9074312
+  },
+  {
+    "file": "pcap_files/arp_reply_race_condition.pcapng",
+    "sha256": "5f00826d0925ebfd180f1d226d7a6be2a2b12f2ff59445a81e210372d35c0e35",
+    "bytes": 19852
+  },
+  {
+    "file": "pcap_files/arp_request_flooding.pcapng",
+    "sha256": "63567a9992b81bb26d854842892f0088277f408d5fd9169a69489a7226302ddb",
+    "bytes": 204836
+  },
+  {
+    "file": "pcap_files/arp_spoof_basic.pcapng",
+    "sha256": "219412f157f27c8e4115f37a382e3759e524cd792238b9b844d62231af3bc7d5",
+    "bytes": 296888
+  },
+  {
+    "file": "pcap_files/arp_spoofing_unicast_reply.pcapng",
+    "sha256": "3b5d74c5422e70aa3e0c5fd629bff74b63d68b633265837d9a8d04e657ce1b7a",
+    "bytes": 108924
+  },
+  {
+    "file": "pcap_files/new_File_for normal_traffic.pcapng",
+    "sha256": "fe271973396f481cf0714f3e6e800e5bb693bbe7e652297c94efba227290f7a2",
+    "bytes": 3128196
+  },
+  {
+    "file": "pcap_files/holdout/arp_normal_holdout_2.pcapng",
+    "sha256": "7d2af9a5638a26a4e42b5aa58993ffc13cbd3836af64efe826f97671553e5f88",
+    "bytes": 127768
+  }
+]

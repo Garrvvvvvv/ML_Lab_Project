@@ -1,111 +1,85 @@
-import os
-import pandas as pd
+"""Run the NB + Isolation Forest ensemble on any capture.
+
+    python model_scripts/predict.py path/to/capture.pcapng
+    python model_scripts/predict.py capture.pcapng --label 0     # you know it is normal
+    python model_scripts/predict.py capture.pcapng --label 1     # you know it is an attack
+
+For an honest demo use a capture that was NOT used in training - e.g. drop it in
+pcap_files/holdout/ (train.py only reads the top level of pcap_files/).
+No label encoders are needed any more, so unseen IPs/MACs cannot crash inference.
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
 import joblib
-from scapy.all import rdpcap, ARP
-from collections import defaultdict
+import numpy as np
+import sklearn
 
-NB_MODEL_PATH = "models/saved_models/naive_bayes_model.pkl"
-IF_MODEL_PATH = "models/saved_models/isolation_forest_model.pkl"
-ENCODER_PATH = "models/encoders"
+from features import FEATURES, PROJECT_ROOT, extract_arp_features
 
-def extract_features_from_pcap(file_path):
-    packets = rdpcap(file_path)
-    data = []
-    ip_mac_map = {}
-    arp_request_timestamps = {}
-    arp_reply_counter = defaultdict(int)
+MODEL_DIR = PROJECT_ROOT / "models"
+DEFAULT_OUT = PROJECT_ROOT / "results" / "prediction_output.csv"
 
-    for pkt in packets:
-        if ARP in pkt:
-            src_ip = pkt[ARP].psrc
-            dst_ip = pkt[ARP].pdst
-            src_mac = pkt[ARP].hwsrc
-            dst_mac = pkt[ARP].hwdst
-            op = pkt[ARP].op
-            pkt_time = pkt.time
-            is_broadcast = int(dst_mac == "ff:ff:ff:ff:ff:ff")
 
-            if op == 2:
-                arp_reply_counter[src_ip] += 1
+def load_models():
+    meta = json.loads((MODEL_DIR / "metadata.json").read_text(encoding="utf-8"))
+    if meta["features"] != FEATURES:
+        sys.exit("Feature list in models/metadata.json differs from features.py - "
+                 "re-run model_scripts/train.py.")
+    if meta["sklearn_version"] != sklearn.__version__:
+        print(f"[WARN] models trained with scikit-learn {meta['sklearn_version']}, "
+              f"running {sklearn.__version__}; re-run train.py if loading fails.")
+    nb = joblib.load(MODEL_DIR / "saved_models" / "naive_bayes_model.pkl")
+    iso = joblib.load(MODEL_DIR / "saved_models" / "isolation_forest_model.pkl")
+    return nb, iso
 
-            reply_delay_ms = -1
-            if op == 1:
-                arp_request_timestamps[(dst_ip, src_ip)] = pkt_time
-            elif op == 2 and (src_ip, dst_ip) in arp_request_timestamps:
-                req_time = arp_request_timestamps[(src_ip, dst_ip)]
-                reply_delay_ms = (pkt_time - req_time) * 1000
-                del arp_request_timestamps[(src_ip, dst_ip)]
 
-            mac_conflict = 0
-            if src_ip in ip_mac_map and ip_mac_map[src_ip] != src_mac:
-                mac_conflict = 1
-            ip_mac_map[src_ip] = src_mac
-
-            data.append({
-                "src_ip": src_ip,
-                "dst_ip": dst_ip,
-                "src_mac": src_mac,
-                "dst_mac": dst_mac,
-                "op": op,
-                "is_broadcast": is_broadcast,
-                "mac_conflict": mac_conflict,
-                "pkt_time": pkt_time,
-                "arp_reply_count": arp_reply_counter[src_ip],
-                "arp_reply_delay_ms": reply_delay_ms
-            })
-    return pd.DataFrame(data)
-
-def load_encoders():
-    encoders = {}
-    for col in ["src_ip", "dst_ip", "src_mac", "dst_mac"]:
-        encoders[col] = joblib.load(os.path.join(ENCODER_PATH, f"{col}_encoder.pkl"))
-    return encoders
-
-def predict_with_ensemble(file_path):
-    df = extract_features_from_pcap(file_path)
+def predict_with_ensemble(pcap_path, out_path=DEFAULT_OUT, true_label=None):
+    df = extract_arp_features(pcap_path)
     if df.empty:
         print("No ARP packets found in the provided file.")
-        return
+        return None
 
-    df = df.sort_values(by="pkt_time")
-    df["interarrival_time"] = df["pkt_time"].diff().fillna(0)
-    df["arp_reply_delay_ms"] = df["arp_reply_delay_ms"].fillna(-1)
+    nb, iso = load_models()
+    X = df[FEATURES]
+    df["nb_prediction"] = nb.predict(X)
+    df["if_prediction"] = (iso.predict(X) == -1).astype(int)       # -1 = anomaly
+    df["final_prediction"] = np.maximum(df["nb_prediction"], df["if_prediction"])  # OR
 
-    encoders = load_encoders()
-    for col in encoders:
-        df[col] = encoders[col].transform(df[col])
+    n = len(df)
+    print(f"\nFile: {Path(pcap_path).name}  ({n} ARP packets)")
+    print(f"{'detector':22s}{'flagged':>9s}{'share':>8s}")
+    for col, name in (("nb_prediction", "Naive Bayes"),
+                      ("if_prediction", "Isolation Forest"),
+                      ("final_prediction", "Ensemble (OR)")):
+        k = int(df[col].sum())
+        print(f"{name:22s}{k:9d}{k / n:8.1%}")
 
-    features = [
-        "src_ip", "dst_ip", "src_mac", "dst_mac", "op",
-        "is_broadcast", "mac_conflict", "interarrival_time",
-        "arp_reply_count", "arp_reply_delay_ms"
-    ]
+    if true_label is not None:
+        what = "false-positive rate" if true_label == 0 else "detection rate (recall)"
+        print(f"\nKnown label = {true_label} -> ensemble {what}: "
+              f"{df['final_prediction'].mean():.1%}")
 
-    # Load models
-    nb_model = joblib.load(NB_MODEL_PATH)
-    iso_model = joblib.load(IF_MODEL_PATH)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_path, index=False)
+    print(f"\nDetailed per-packet output saved to {out_path}")
+    return df
 
-    # Naive Bayes predictions
-    nb_preds = nb_model.predict(df[features])
 
-    # Isolation Forest predictions (1=normal, -1=anomaly → we map to 0 and 1)
-    iso_preds_raw = iso_model.predict(df[features])
-    iso_preds = [0 if pred == 1 else 1 for pred in iso_preds_raw]
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("pcap", help="capture file (.pcap / .pcapng) to analyse")
+    ap.add_argument("--label", type=int, choices=[0, 1],
+                    help="ground truth for the whole capture, to print FPR / recall")
+    ap.add_argument("--out", default=str(DEFAULT_OUT), help="output CSV path")
+    args = ap.parse_args()
+    if not Path(args.pcap).is_file():
+        sys.exit(f"File not found: {args.pcap}")
+    predict_with_ensemble(args.pcap, args.out, args.label)
 
-    # Ensemble: mark attack if any model detects it
-    ensemble_preds = [1 if (nb or iso) else 0 for nb, iso in zip(nb_preds, iso_preds)]
-
-    df["nb_prediction"] = nb_preds
-    df["if_prediction"] = iso_preds
-    df["final_prediction"] = ensemble_preds
-
-    print("\nEnsemble Prediction Summary:")
-    print(df[["src_ip", "dst_ip", "nb_prediction", "if_prediction", "final_prediction"]].value_counts())
-    print("\nSummary Count (0=Normal, 1=Attack):")
-    print(df["final_prediction"].value_counts())
-
-    df.to_csv("prediction_output.csv", index=False)
-    print("\nDetailed prediction saved to 'prediction_output.csv'.")
 
 if __name__ == "__main__":
-    predict_with_ensemble(r"pcap_files\arp_gratuitous_announcement.pcapng")
+    main()
