@@ -43,9 +43,9 @@
   ],
   "synthetic_augmentation": false,
   "synthetic_rows_in_dataset_files": 3980,
-  "trained_at": "2026-11-25T02:51:12",
-  "run_id": "20261125-025112",
-  "git_commit": "9ec040f9093eec6a1728ef72705d4dbd97cddd6f",
+  "trained_at": "2026-11-25T05:44:57",
+  "run_id": "20261125-054457",
+  "git_commit": "027990fc1acc6fcc8be209a9ed9051b38ad4f8d9",
   "data_hash": "3e5ed8d1817a0575e85e94eb586c359ae35b7e8c080dead4ebf6f416abae86f9",
   "headline_metrics": {
     "all_data_holdout": {

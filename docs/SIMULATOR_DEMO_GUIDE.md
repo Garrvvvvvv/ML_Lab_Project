@@ -21,7 +21,7 @@ react. Nothing is ever sent on the network, so no real device is attacked."
 |---|---|---|
 | 1 | Show the page, press **Start / Reset** | "This is live ARP traffic from this network, captured read-only. Real packets are assumed normal." |
 | 2 | Point at *Real packets captured* and *Real hosts seen* | "The counters rise as real devices talk. I wait until it has seen at least three real hosts." |
-| 3 | Point at the **shipped detectors** (Naive Bayes, Isolation Forest, Ensemble). Green = quiet, yellow = stray flags (noise) | "Before any attack, a red card on a shipped detector would be a false alarm on real traffic. Yellow means the odd packet was flagged but not like an attacker. The comparison models below can over-alert on a new network, so we show them separately." |
+| 3 | Point at the **detector cards** (Naive Bayes, Isolation Forest, Ensemble). Green = quiet, yellow = stray flags (noise) | "Before any attack, a red card on a shipped detector would be a false alarm on real traffic. Yellow means the odd packet was flagged but not like an attacker." |
 | 4 | Press **Launch Basic spoof** | "This forges replies claiming the real gateway's address, using hosts it actually saw. The shipped cards turn red." |
 | 5 | Point at the packet feed (truth column shows `INJECTED: basic`) | "Every injected packet is labelled, so we know exactly what should be caught." |
 | 6 | Press **Launch Flooding** as well | "Flooding is a different attack: many forged identities fast. Attacks can run together." |
@@ -64,8 +64,7 @@ on the combined test but flags 7.1% of normal packets in the attack-network test
 
 ## If the network is very busy
 If a yellow **Busy network** banner appears (the live ARP rate is far above the training data), say so: "This network is
-busier than anything the models were trained on. The comparison models over-alert, which is a real generalisation limit;
-the shipped detectors stay calm." Press **Start / Reset** just before you launch attacks; a session can run up to 60,000
+busier than anything the models were trained on, so false alarms can rise. That is a real generalisation limit." Press **Start / Reset** just before you launch attacks; a session can run up to 60,000
 packets, and detection works the same at any rate. If it is still confusing, switch the sidebar to **Virtual LAN**.
 
 An **ALERT** means a sender had at least 3 flagged packets and over half of its recent packets flagged in 10 seconds.

@@ -287,10 +287,10 @@ Four modes (sidebar):
 In the live modes the page shows a live chart, a packet feed, per-launch detection times ("first flagged attack packet") and
 the running overall result, updated every second. A session stops at 60,000 packets (press Start / Reset). How it behaves:
 
-- **Shipped vs comparison detectors.** Naive Bayes, Isolation Forest and the ensemble are shown as the shipped detectors;
-  Logistic Regression, Random Forest and the majority vote are shown separately as comparison models, because they can flag
-  *every* packet on a network busier than their training data (on a very busy campus Wi-Fi, ~100-200 ARP packets/s against a
-  training maximum of 64/s, they did).
+- **Detectors shown.** Only the three shipped detectors: Naive Bayes, Isolation Forest and the ensemble. Logistic Regression
+  and Random Forest are not in the simulator (on a very busy campus Wi-Fi, ~100-200 ARP packets/s against a training maximum
+  of 64/s, they flagged *every* packet and confused the demo); they are still compared offline with
+  `python model_scripts/compare_models.py`.
 - **Alert rule** (`model_scripts/alerting.py`): 🔴 ALERT needs a sender with at least 3 flagged packets *and* over half of its
   packets flagged in the last 10 s; 🟡 stray flags are flagged packets that don't look like an attacker (normal noise, or a
   busy host such as a subnet scanner with ~2% of its packets flagged); 🟢 quiet means nothing flagged. A single flagged
@@ -310,6 +310,7 @@ the running overall result, updated every second. A session stops at 60,000 pack
 | `Base Paper/` | the base paper PDF (Singhal and Kumar, 2026) |
 | `reference_papers/` | other papers read, with an index (`README.md`) |
 | `Presentation/` | project slides (`ARP_Spoofing_Detection_v2.pptx`) and the design reference deck |
+| `report/` | the UML501 project report (`ARP_Spoofing_Detection_Report.docx` and `.pdf`, 20 pages), its `figures/`, and the reference report it follows |
 | `pcap_files/` | raw captures (top level = training data; `holdout/` = unseen) |
 | `dataset/` | extracted datasets (real files and clearly-labelled synthetic files) |
 | `model_scripts/` | `features.py`, `train.py`, `tune.py`, `compare_models.py`, `predict.py`, `augment.py`, `simulate.py`, `alerting.py`, `config.py`, `model_factory.py`, `runlog.py` |

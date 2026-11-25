@@ -312,10 +312,11 @@ from `pcap_files/holdout/` for an unbiased demonstration (e.g. `holdout/arp_norm
   packets built from real hosts seen so far, added to the in-memory stream only. The detectors were trained on the recorded
   dataset. Because the attacks are simulated and cleaner than the lab ones, simulator scores are illustrations, not accuracy
   evidence; the accuracy numbers come from the recorded captures (Section 8).
-- **Shipped vs comparison cards.** Naive Bayes, Isolation Forest and the ensemble are the main cards. Logistic Regression,
-  Random Forest and the majority vote are shown separately because on a network far busier than their training data they can flag
-  every packet (observed on campus Wi-Fi at ~100-200 ARP packets/s vs a training maximum of 64/s); a "busy network" banner
-  appears above ~33 packets/s (99.9th percentile of normal training traffic).
+- **Detectors shown.** Only the three shipped detectors: Naive Bayes, Isolation Forest and the ensemble. Logistic Regression
+  and Random Forest were removed from the simulator because their cards over-alerted on a network far busier than their training
+  data (campus Wi-Fi at ~100-200 ARP packets/s vs a training maximum of 64/s) and confused the demo; they are still compared
+  offline in `model_scripts/compare_models.py`. A "busy network" banner appears above ~33 packets/s (99.9th percentile of
+  normal training traffic), because the shipped detectors may also be less reliable there.
 - **Alert rule** (`model_scripts/alerting.py`): ALERT needs a sender with at least 3 flagged packets and over half of its packets
   flagged in 10 s; "stray flags" are flagged packets that do not look like an attacker (noise, or a busy host such as a scanner
   with ~2% of its packets flagged). A single flagged packet is not an alert. In tests all five attack types raised an ALERT on
@@ -435,9 +436,9 @@ network. Its scores are illustrations; the accuracy evidence is the recorded-cap
 **Why not attack the real network?** It would poison other students' ARP caches on a shared network. Attacks are only injected
 into the program's memory.
 
-**Why does the simulator sometimes show comparison models in red?** On a network far busier than the training data, Logistic
-Regression and Random Forest flag every packet. That is a real generalisation limit, so they are shown separately from the shipped
-detectors, with a busy-network warning.
+**Why doesn't the simulator show Logistic Regression and Random Forest?** On a network far busier than the training data they
+flagged every packet, which confused the demo. They are compared offline (`compare_models.py`, Section 8), and the simulator
+shows only the shipped detectors, with a busy-network warning.
 
 **What does an ALERT mean in the simulator?** A sender had at least 3 flagged packets and over half of its recent packets flagged
 in 10 seconds. A single flagged packet is only a "stray flag".

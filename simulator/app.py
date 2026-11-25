@@ -19,9 +19,7 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "model_scripts"))
 from alerting import ALERT_MIN_FLAGS, ALERT_MIN_SHARE, ALERT_WINDOW_S, alert_state  # noqa: E402
-from config import load_config  # noqa: E402
 from features import FEATURES, discover_pcaps, extract_arp_features  # noqa: E402
-from model_factory import make_lr, make_rf  # noqa: E402
 from simulate import (ATTACKS, SCENARIOS, HybridLAN, LiveCapture, LiveLAN, packets_per_second,  # noqa: E402
                       simulate, training_rate_limit)
 
@@ -30,15 +28,11 @@ MODE_LIVE = "Virtual LAN: launch attacks manually"
 MODE_SCRIPTED = "Scripted simulation"
 MODE_REPLAY = "Replay recorded capture"
 
-DETECTORS = ["Naive Bayes", "Isolation Forest", "Ensemble (NB OR IF)",
-             "Logistic Regression", "Random Forest", "Majority vote (NB, IF, LR, RF)"]
-SHORT = {"Naive Bayes": "NB", "Isolation Forest": "IF", "Ensemble (NB OR IF)": "ENS",
-         "Logistic Regression": "LR", "Random Forest": "RF", "Majority vote (NB, IF, LR, RF)": "VOTE"}
-
-# The detectors we ship and stand behind, vs. models trained only for comparison. On a network busier than the
-# training data, the comparison models (LR, RF) can flag every packet, so they are shown separately.
-SHIPPED = ["Naive Bayes", "Isolation Forest", "Ensemble (NB OR IF)"]
-COMPARISON = [d for d in DETECTORS if d not in SHIPPED]
+# Only the detectors we ship. (Logistic Regression / Random Forest are compared offline in
+# model_scripts/compare_models.py and are deliberately not part of the simulator.)
+DETECTORS = ["Naive Bayes", "Isolation Forest", "Ensemble (NB OR IF)"]
+SHORT = {"Naive Bayes": "NB", "Isolation Forest": "IF", "Ensemble (NB OR IF)": "ENS"}
+SHIPPED = DETECTORS
 
 # The alert rule (what counts as an ALERT vs stray flags) is in model_scripts/alerting.py
 STATE_LABEL = {"quiet": "🟢 quiet", "stray": "🟡 stray flags", "alert": "🔴 ALERT"}
@@ -47,17 +41,12 @@ st.set_page_config(page_title="ARP Spoofing Simulator", page_icon="🛡️", lay
 
 
 # ------------------------------------------------------------------ models
-@st.cache_resource(show_spinner="Loading models (Logistic Regression / Random Forest are trained on the real pool)...")
+@st.cache_resource(show_spinner="Loading models...")
 def load_models():
     nb = joblib.load(ROOT / "models" / "saved_models" / "naive_bayes_model.pkl")
     iso = joblib.load(ROOT / "models" / "saved_models" / "isolation_forest_model.pkl")
-    pool = pd.read_csv(ROOT / "dataset" / "arp_dataset_features.csv")      # REAL packets only
-    cfg = load_config()
-    lr, rf = make_lr(cfg), make_rf(cfg)
-    lr.fit(pool[FEATURES], pool["label"])
-    rf.fit(pool[FEATURES], pool["label"])
     raw = pd.read_csv(ROOT / "dataset" / "arp_dataset_raw.csv", usecols=["capture", "pkt_time", "label"])
-    return {"nb": nb, "iso": iso, "lr": lr, "rf": rf, "n_train": len(pool),
+    return {"nb": nb, "iso": iso,
             "rate_limit": training_rate_limit(raw)}        # busiest normal ARP rate seen in training (packets/s)
 
 
@@ -65,13 +54,7 @@ def score(df, models):
     X = df[FEATURES]
     nb = models["nb"].predict(X)
     iso = (models["iso"].predict(X) == -1).astype(int)
-    lr = models["lr"].predict(X)
-    rf = models["rf"].predict(X)
-    return {
-        "Naive Bayes": nb, "Isolation Forest": iso, "Ensemble (NB OR IF)": np.maximum(nb, iso),
-        "Logistic Regression": lr, "Random Forest": rf,
-        "Majority vote (NB, IF, LR, RF)": ((nb + iso + lr + rf) >= 3).astype(int),
-    }
+    return {"Naive Bayes": nb, "Isolation Forest": iso, "Ensemble (NB OR IF)": np.maximum(nb, iso)}
 
 
 def metrics_table(df, preds, attack_start=None):
@@ -219,18 +202,14 @@ def live_page(models, normal_rate, n_hosts, seed, intensity, tick_s, hybrid=Fals
         real_rate = packets_per_second(df.loc[df["is_attack"] == 0, "time_s"], lan.t)
         if real_rate > models["rate_limit"]:
             st.warning(f"**Busy network:** about {real_rate:.0f} ARP packets/s right now, but the normal traffic the models "
-                       f"were trained on never went above about {models['rate_limit']:.0f}/s. The comparison models "
-                       f"(Logistic Regression, Random Forest) are unreliable at this rate and tend to flag everything - "
-                       f"read the shipped detectors.")
+                       f"were trained on never went above about {models['rate_limit']:.0f}/s, so the detectors may be "
+                       f"less reliable and raise more false alarms.")
 
-        st.subheader(f"Shipped detectors (last {ALERT_WINDOW_S} s)")
+        st.subheader(f"Detectors (last {ALERT_WINDOW_S} s)")
         st.caption(f"🔴 ALERT = a sender with at least {ALERT_MIN_FLAGS} flagged packets and over {ALERT_MIN_SHARE:.0%} of its "
                    f"packets flagged in {ALERT_WINDOW_S} s · 🟡 stray flags = flagged packets that don't look like an attacker "
                    "(normal noise) · 🟢 quiet = nothing flagged.")
         for col, d in zip(st.columns(len(SHIPPED)), SHIPPED):
-            status_card(col, d)
-        st.caption("Comparison models, for reference only: trained on quieter traffic, so they can over-alert on a new network.")
-        for col, d in zip(st.columns(len(COMPARISON)), COMPARISON):
             status_card(col, d)
 
         cum = pd.concat([df[["is_attack"]].rename(columns={"is_attack": "ACTUAL ATTACK"}).cumsum(), flags.cumsum()], axis=1)
@@ -263,19 +242,17 @@ def live_page(models, normal_rate, n_hosts, seed, intensity, tick_s, hybrid=Fals
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
             mt = metrics_table(df, {d: flags[SHORT[d]].to_numpy() for d in DETECTORS}, lan.log[0]["start"])
-            mt["Role"] = np.where(mt["Detector"].isin(SHIPPED), "shipped", "comparison")
-            mt = mt.sort_values("Role", key=lambda r: r != "shipped", kind="stable")     # shipped detectors first
             st.subheader("Overall result so far")
-            ms = mt[mt["Role"] == "shipped"]
+            ms = mt
             if y.sum() and ms["F1"].notna().any():
-                msg = (f"Among the shipped detectors - best F1: **{ms.loc[ms['F1'].idxmax(), 'Detector']}** "
+                msg = (f"Best F1: **{ms.loc[ms['F1'].idxmax(), 'Detector']}** "
                        f"({ms['F1'].max():.3f}) · highest recall: **{ms.loc[ms['Recall'].idxmax(), 'Detector']}** "
                        f"({ms['Recall'].max():.1%})")
                 if ms["FPR clean traffic"].notna().any():
                     msg += (f" · lowest false alarms on clean traffic: **{ms.loc[ms['FPR clean traffic'].idxmin(), 'Detector']}** "
                             f"({ms['FPR clean traffic'].min():.1%})")
                 st.success(msg + ".")
-            cols_ = ["Detector", "Role", "TP", "FN", "FP", "TN", "Recall", "Precision", "FPR clean traffic",
+            cols_ = ["Detector", "TP", "FN", "FP", "TN", "Recall", "Precision", "FPR clean traffic",
                      "Legit pkts flagged during attack", "F1"]
             fmt = {k: "{:.3f}" for k in ["Recall", "Precision", "F1", "FPR clean traffic", "Legit pkts flagged during attack"]}
             st.dataframe(mt[cols_].style.format(fmt, na_rep="-"), hide_index=True, use_container_width=True)
@@ -329,8 +306,7 @@ with st.sidebar:
         speed = st.slider("Replay steps (more = smoother)", 10, 80, 40)
         animate = st.checkbox("Animate live replay", True)
         run = st.button("▶ Run", type="primary", use_container_width=True)
-    st.caption(f"Logistic Regression / Random Forest trained on {models['n_train']} real packets. "
-               "Naive Bayes / Isolation Forest are the shipped models.")
+    st.caption("Detectors: Naive Bayes, Isolation Forest and their OR-ensemble (the shipped models).")
 
 if mode != MODE_HYBRID and st.session_state.get("cap") is not None:      # leave live capture when switching away
     st.session_state["cap"].stop()
@@ -470,25 +446,27 @@ with tab_overall:
                 st.write(f"Fastest alert: **{fastest.iloc[0]['Detector']}** after {fastest.iloc[0]['Time to detect (s)']:.2f} s.")
     st.subheader("Benchmark on REAL recorded packets (offline evaluation)")
     st.caption("These are the numbers to quote; simulator runs above are illustrations.")
-    cmp_path = ROOT / "results" / "model_comparison.json"
-    if cmp_path.exists():
-        cmp = json.loads(cmp_path.read_text(encoding="utf-8"))
+    met_path = ROOT / "results" / "metrics.json"
+    if met_path.exists():
+        met = json.loads(met_path.read_text(encoding="utf-8"))
+        same_res = met.get("same_network_holdout", {}).get("192.168", {}).get("results", {})
+        unseen = {k: v for k, v in (met.get("unseen_holdout") or [{}])[0].items() if k.endswith("_real")}
+        unseen_key = {"Naive Bayes": "nb_real", "Isolation Forest": "if_real", "Ensemble (NB OR IF)": "ens_real"}
         rows = []
-        for name, m in cmp["holdout"].items():
-            same = cmp["same_network"].get("192.168", {}).get("results", {}).get(name, {})
-            rows.append({"Model": name, "Recall (all-data)": m["recall"], "FPR (all-data)": m["false_positive_rate"],
-                         "MCC (all-data)": m["mcc"], "Recall (same network)": same.get("recall"),
+        for name in DETECTORS:
+            m = met["holdout"].get(name, {})
+            same = same_res.get(name, {})
+            rows.append({"Model": name, "Recall (all-data)": m.get("recall"),
+                         "FPR (all-data)": m.get("false_positive_rate"), "MCC (all-data)": m.get("mcc"),
+                         "Recall (same network)": same.get("recall"),
                          "FPR (same network)": same.get("false_positive_rate"),
-                         "FPR unseen evening capture": cmp["unseen_holdout_fpr"].get(name)})
+                         "FPR unseen evening capture": unseen.get(unseen_key[name])})
         st.dataframe(pd.DataFrame(rows).style.format({c: "{:.3f}" for c in
                      ["Recall (all-data)", "FPR (all-data)", "MCC (all-data)", "Recall (same network)",
                       "FPR (same network)", "FPR unseen evening capture"]}, na_rep="-"),
                      hide_index=True, use_container_width=True)
-        st.markdown("**Reading it:** Random Forest scores best overall but has the highest false-positive rate on the "
-                    "same-network test, so part of its gain may be recognising the network. Naive Bayes is the most "
-                    "stable and is the shipped model. Isolation Forest / ensemble numbers are in `results/metrics.md`.")
     else:
-        st.info("Run `python model_scripts/compare_models.py` to create `results/model_comparison.json`.")
+        st.info("Run `python model_scripts/train.py` to create `results/metrics.json`.")
 
 with tab_pkts:
     out = df[["time_s", "src_ip", "src_mac", "dst_ip", "kind", "is_attack"] + FEATURES].copy()
